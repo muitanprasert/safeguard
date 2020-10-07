@@ -16,16 +16,19 @@ import java.util.Scanner;
  *
  */
 public class Client {
+	
+	//instance variables
 	private int portNumber = 1999;
 	DataOutputStream streamOut;
 	DataInputStream streamIn;
 	Scanner console;
+	boolean loggedin = false;
 	
 	/**
 	 * Constructor handles the central control of operations
 	 */
 	public Client() {    
-		//TODO: change to another machine's address when not running locally
+		//IMPORTANT: change to another machine's address when not running locally
 		String serverAddress = "localhost";
 		    
 		try{
@@ -58,21 +61,20 @@ public class Client {
 		    }
 		    else {
 		    	//TODO log-in
-		    	//check if the account exists
+		    	//check if the account exists too
 		    }
-		    
-		    
-		    //send messages to server
-		    
+
 		    while(!line.equals("logout")) {
-				
+		    	line = console.nextLine();
+		    	
+				//communicate with user and server while authenticated
 		    }
 			
 		    //close all the sockets and console 
 		    console.close();
 		    streamOut.close();
+		    streamIn.close();
 		    serverSocket.close();
-			
 		}
 		catch(IOException e) {
 		    //print error
@@ -85,22 +87,27 @@ public class Client {
 	 * Prompt the user to enter username and password and register with the server
 	 * @throws IOException
 	 */
-	private void register() throws IOException {
+	protected void register() throws IOException {
 		String response = null;
 		do {
+			//prompt for a username
 			System.out.print("Username: ");
 	    	String username = console.nextLine();
 	    	while(username.contains(" ")) {
 	    		System.out.print("Username cannot contain space. Please choose another username: ");
 		    	username = console.nextLine();
 	    	}
+	    	
+	    	//prompt for a password
 	    	System.out.print("Password: ");
 	    	String password = console.nextLine();
 	    	while(username.contains(" ")) {
 	    		System.out.print("Password cannot contain space. Please choose another password: ");
 		    	password = console.nextLine();
 	    	}
-	    	sendMessage("CREATE "+username+" "+password);
+	    	
+	    	//send a request to create an account
+	    	sendMessage("REGISTER "+username+" "+password);
 	    	response = streamIn.readUTF();
 	    	System.out.println(response);
 		} while(!response.equals("Successfully created an account."));
@@ -110,7 +117,7 @@ public class Client {
 	 * Sends a message to the data output stream
 	 * @throws IOException 
 	 */
-	private void sendMessage(String msg) throws IOException {
+	protected void sendMessage(String msg) throws IOException {
 	    streamOut.writeUTF(msg);
 	    streamOut.flush();
 	    System.out.println("Message sent");

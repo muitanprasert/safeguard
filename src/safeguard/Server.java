@@ -20,10 +20,10 @@ import java.util.Base64;
 public class Server {
 	private int portNumber = 1999;
 	DataOutputStream streamOut;
+	DataInputStream streamIn;
 
 	public Server() throws Exception {
 		try {
-			
 			//start the server
 		    ServerSocket server = new ServerSocket(portNumber);
 		    System.out.println("Server started at port "+portNumber);
@@ -31,7 +31,7 @@ public class Server {
 		    //accept a client
 		    Socket clientSocket = server.accept();
 		    System.out.println("Client connected");
-		    DataInputStream streamIn = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
+		    streamIn = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
 		    streamOut = new DataOutputStream(clientSocket.getOutputStream());
 				
 		    boolean finished = false;
@@ -55,6 +55,7 @@ public class Server {
 		    //clean up the connections before closing
 		    server.close();
 		    streamIn.close();
+		    streamOut.close();
 		    System.out.println("Server closed");
 		} 
 		catch (IOException e) {
@@ -68,14 +69,21 @@ public class Server {
 	 * Sends a message to the data output stream
 	 * @throws IOException 
 	 */
-	private void sendMessage(String msg) throws IOException {
+	protected void sendMessage(String msg) throws IOException {
 	    streamOut.writeUTF(msg);
 	    streamOut.flush();
 	    System.out.println("Message sent: " +msg);
 	}
 	
-	private String processMessage(String msg) {
-		if(msg.startsWith("CREATE")) {
+	/**
+	 * Process an incoming message by detecting the type of request
+	 *    and calling corresponding function
+	 * Messaage type: REGISTER, LOGIN, NEWKEY, GETKEY, etc.
+	 * @param msg
+	 * @return the server's response
+	 */
+	protected String processMessage(String msg) {
+		if(msg.startsWith("REGISTER")) {
 			String[] components = msg.split(" ");
 			try {
 				String username = components[1];
@@ -88,12 +96,22 @@ public class Server {
 		return "Incorrect message format. Please try again.";
 	}
 	
-	private String createUser(String username, String password) throws IOException {
-		// check if already exists
+	/**
+	 * 
+	 * @param username
+	 * @param password
+	 * @return
+	 * @throws IOException
+	 */
+	protected String createUser(String username, String password) throws IOException {
+		
+		//check if already exists
 		File f = new File("./"+username); //TODO: encrypt to protect usernames
 		if (f.exists() && f.isDirectory()) {
 		   return "Username already in use. Please pick a different username.";
 		}
+		
+		//create the account with the given password
 		f.mkdir();
 		FileOutputStream fos = new FileOutputStream("./"+username+"/pw");
 		fos.write(password.getBytes()); //TODO: encrypt to protect passwords
