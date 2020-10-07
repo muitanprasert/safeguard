@@ -22,7 +22,7 @@ public class Client {
 	DataOutputStream streamOut;
 	DataInputStream streamIn;
 	Scanner console;
-	boolean loggedin = false;
+	//boolean loggedin = false;
 	
 	/**
 	 * Constructor handles the central control of operations
@@ -39,7 +39,7 @@ public class Client {
 			
 		    streamOut = new DataOutputStream(serverSocket.getOutputStream());
 		    streamIn = new DataInputStream(new BufferedInputStream(serverSocket.getInputStream()));
-		    console = new Scanner(System.in);
+		    console = new Scanner(System.in, "utf-8");
 			
 		    //log-in/register
 		    String line = "";
@@ -148,7 +148,7 @@ public class Client {
 	 */
 	public static void main(String[] args) {
 		try {
-			Client client = new Client();
+			new Client();
 	    } catch (Exception e) {
 	    	e.printStackTrace();
 	    }

@@ -112,11 +112,13 @@ public class Server {
 		}
 		
 		//create the account with the given password
-		f.mkdir();
-		FileOutputStream fos = new FileOutputStream("./"+username+"/pw");
-		fos.write(password.getBytes()); //TODO: encrypt to protect passwords
-		fos.close();
-		return "Successfully created an account.";
+		if(f.mkdir()) {
+			FileOutputStream fos = new FileOutputStream("./"+username+"/pw");
+			fos.write(password.getBytes("utf-8")); //TODO: encrypt to protect passwords
+			fos.close();
+			return "Successfully created an account.";
+		}
+		throw new IOException(); //fail to create due to internal file systems issues
 	}
 	
 	/**
@@ -131,7 +133,7 @@ public class Server {
 	
     public static void main(String[] args) throws Exception {
     	try {
-    		Server server = new Server();
+    		new Server();
     	} catch (Exception e) {
 	    	e.printStackTrace();
 	    }
