@@ -9,10 +9,10 @@ _Current status_
 
 _Running Instructions_
 * In the safeguard directory run
-* javac Server.java
-* javac Client.java
+* `javac Server.java`
+* `javac Client.java`
 * to compile the server and client files.
 * Then move out to src directory and run
-* java safeguard.Server
-* java safeguard.Client
+* `java safeguard.Server`
+* `java safeguard.Client`
 * to start up the client and server
