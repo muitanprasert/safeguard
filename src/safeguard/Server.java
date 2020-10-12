@@ -7,6 +7,7 @@ import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -76,7 +77,7 @@ public class Server {
 
 	/**
 	 * Process an incoming message by detecting the type of request and calling
-	 * corresponding function Messaage type: REGISTER, LOGIN, NEWKEY, GETKEY, etc.
+	 * corresponding function Messaage type: REGISTER, LOGIN, NEWKEY, LOADKEY, etc.
 	 * 
 	 * @param msg
 	 * @return the server's response
@@ -100,10 +101,37 @@ public class Server {
 			} catch (Exception e) {
 				return ". Please try again.";
 			}
+		} else if (msg.startsWith("NEWKEY")) {
+			String[] components = msg.split(" ");
+			try {
+				String username = components[1];
+				String keyName = components[2];
+				String key = components[3];
+				return createKey(username, keyName, key);
+			} catch (Exception e) {
+				return ". Please try again.";
+			}
+		} else if (msg.startsWith("LOADKEY")) {
+			String[] components = msg.split(" ");
+			try {
+				String username = components[1];
+				String keyName = components[2];
+				return loadKey(username, keyName);
+			} catch (Exception e) {
+				return e.getMessage() + ". Please try again.";
+			}
 		}
 		return "Incorrect message format. Please try again.";
 	}
 
+	/**
+	 * Login to an existing account with this username and password
+	 * 
+	 * @param username
+	 * @param password
+	 * @return
+	 * @throws IOException
+	 */
 	protected String login(String username, String password) throws IOException {
 		// check if already exists
 		File f = new File("./" + username); // TODO: encrypt to protect usernames
@@ -125,6 +153,8 @@ public class Server {
 	}
 
 	/**
+	 * Create a new user on the file system with the specifiedd username and
+	 * password
 	 * 
 	 * @param username
 	 * @param password
@@ -132,7 +162,6 @@ public class Server {
 	 * @throws IOException
 	 */
 	protected String createUser(String username, String password) throws IOException {
-
 		// check if already exists
 		File f = new File("./" + username); // TODO: encrypt to protect usernames
 		if (f.exists() && f.isDirectory()) {
@@ -147,6 +176,56 @@ public class Server {
 			return "Successfully created an account.";
 		}
 		throw new IOException(); // fail to create due to internal file systems issues
+	}
+
+	/**
+	 * Create a new key with the key name on the file system
+	 * 
+	 * @param username
+	 * @param keyName
+	 * @param key
+	 * @return
+	 * @throws IOException
+	 */
+	protected String createKey(String username, String keyName, String key) throws IOException {
+		// check that we are not overwritting the password
+		if (keyName.equals("pw")) {
+			return "Key name cannot be \"pw\", please choose a different key name";
+		}
+
+		// check if this username exists
+		File f = new File("./" + username); // TODO: encrypt to protect usernames
+		if (!f.exists() && !f.isDirectory()) {
+			return "No such username, message may have been corrupted. Try again or reconnect to server";
+		}
+
+		// create the keyName file with the given key
+		FileOutputStream fos = new FileOutputStream("./" + username + "/" + keyName);
+		fos.write(key.getBytes("utf-8")); // TODO: encrypt to protect passwords
+		fos.close();
+		return "Successfully created a new key";
+
+	}
+
+	protected String loadKey(String username, String keyName) {
+		// check if this username exists
+		File f = new File("./" + username); // TODO: encrypt to protect usernames
+		if (!f.exists() && !f.isDirectory()) {
+			return "No such username, message may have been corrupted. Try again or reconnect to server";
+		}
+
+		// load the password on the file and check if it matches the input password
+		try {
+			File keyFile = new File("./" + username + "/" + keyName);
+			Scanner keyReader = new Scanner(keyFile);
+			String savedKey = keyReader.nextLine();
+			keyReader.close();
+
+			// log-in if passwords match
+			return "Success! Key under name \"" + keyName + "\" is: " + savedKey;
+		} catch (FileNotFoundException e) {
+			return "No such file, try running \"create key \" first";
+		}
 	}
 
 	/**

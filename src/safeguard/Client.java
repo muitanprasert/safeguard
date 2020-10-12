@@ -24,6 +24,9 @@ public class Client {
 	Scanner console;
 	// boolean loggedin = false;
 
+	// the username that is currently logged in
+	private String session_username;
+
 	/**
 	 * Constructor handles the central control of operations
 	 */
@@ -74,18 +77,37 @@ public class Client {
 				}
 			}
 
+			// communicate with user and server while authenticated
 			while (!line.equals("logout")) {
-				System.out.println("Please choose \"create\" or \"load\"?");
+				System.out.println("Please choose \"create key\" or \"load key\" or \"logout\"?");
 				line = console.nextLine();
-
-				// communicate with user and server while authenticated
+				if (line.equals("create key")) {
+					try {
+						createKey();
+					} catch (Exception e) {
+						System.out.println(e.getMessage());
+						System.out.println("Creating key failed. Terminating connection.");
+						line = "logout";
+					}
+				}
+				if (line.equals("load key")) {
+					try {
+						loadKey();
+					} catch (Exception e) {
+						System.out.println(e.getMessage());
+						System.out.println("Creating key failed. Terminating connection.");
+						line = "logout";
+					}
+				}
 			}
 
 			// close all the sockets and console
+			System.out.println("Logging out of the server...");
 			console.close();
 			streamOut.close();
 			streamIn.close();
 			serverSocket.close();
+			System.out.println("Logout successful");
 		} catch (IOException e) {
 			// print error
 			System.out.println("Connection failed due to following reason");
@@ -121,6 +143,10 @@ public class Client {
 			sendMessage("LOGIN " + username + " " + password);
 			response = streamIn.readUTF();
 			System.out.println(response);
+
+			// on a successful login, set the session username for later key accesses
+			if (response.equals("Successfully logged in"))
+				session_username = username;
 		} while (!response.equals("Successfully logged in"));
 	}
 
@@ -143,7 +169,7 @@ public class Client {
 			// prompt for a password
 			System.out.print("Password: ");
 			String password = console.nextLine();
-			while (username.contains(" ")) {
+			while (password.contains(" ")) {
 				System.out.print("Password cannot contain space. Please choose another password: ");
 				password = console.nextLine();
 			}
@@ -153,6 +179,64 @@ public class Client {
 			response = streamIn.readUTF();
 			System.out.println(response);
 		} while (!response.equals("Successfully created an account."));
+	}
+
+	/**
+	 * Prompt the user to enter a key name and a key, then adds this pair to the
+	 * file system for this user
+	 * 
+	 * @throws IOException
+	 */
+	protected void createKey() throws IOException {
+		String response = null;
+		// do {
+		// prompt for a key name
+		System.out.print("Key name: ");
+		String keyName = console.nextLine();
+		while (keyName.contains(" ")) {
+			System.out.print("Key name cannot contain space. Please choose another key name: ");
+			keyName = console.nextLine();
+		}
+
+		// prompt for a key
+		System.out.print("Key: ");
+		String key = console.nextLine();
+		while (key.contains(" ")) {
+			System.out.print("Key cannot contain space. Please choose another key: ");
+			key = console.nextLine();
+		}
+
+		// send a request to create an account
+		sendMessage("NEWKEY " + session_username + " " + keyName + " " + key);
+		response = streamIn.readUTF();
+		System.out.println(response);
+		// } while (!response.equals("Successfully created a new key"));
+	}
+
+	/**
+	 * Prompts the user for a key name, and gets the key associated with this name
+	 * on the file system for this user
+	 * 
+	 * @throws IOException
+	 */
+	protected void loadKey() throws IOException {
+		String response = null;
+		// do {
+		// prompt for a key name
+		System.out.print("Key name: ");
+		String keyName = console.nextLine();
+		while (keyName.contains(" ")) {
+			System.out.print("Key name cannot contain space. Please choose another key name: ");
+			keyName = console.nextLine();
+		}
+
+		// send a request to create an account
+		sendMessage("LOADKEY " + session_username + " " + keyName);
+		response = streamIn.readUTF();
+		System.out.println(response);
+
+		// check if the loading was a success
+		// } while (!response.split(" ")[0].equals("Success!"));
 	}
 
 	/**
