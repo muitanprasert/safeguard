@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Base64;
+import java.util.Scanner;
 
 /**
  * @author Mui Tanprasert & Alex Franklin
@@ -24,78 +25,105 @@ public class Server {
 
 	public Server() throws Exception {
 		try {
-			//start the server
-		    ServerSocket server = new ServerSocket(portNumber);
-		    System.out.println("Server started at port "+portNumber);
-		    
-		    //accept a client
-		    Socket clientSocket = server.accept();
-		    System.out.println("Client connected");
-		    streamIn = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
-		    streamOut = new DataOutputStream(clientSocket.getOutputStream());
-				
-		    boolean finished = false;
-				
-		    //read incoming messages
-		    while(!finished) {
+			// start the server
+			ServerSocket server = new ServerSocket(portNumber);
+			System.out.println("Server started at port " + portNumber);
+
+			// accept a client
+			Socket clientSocket = server.accept();
+			System.out.println("Client connected");
+			streamIn = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
+			streamOut = new DataOutputStream(clientSocket.getOutputStream());
+
+			boolean finished = false;
+
+			// read incoming messages
+			while (!finished) {
 				try {
-				    String msg = streamIn.readUTF();
-				    System.out.println("Received msg: " + msg);
-				    String response = processMessage(msg);
-				    sendMessage(response);
-				    
-				    finished = msg.equals("logout");
+					String msg = streamIn.readUTF();
+					System.out.println("Received msg: " + msg);
+					String response = processMessage(msg);
+					sendMessage(response);
+					finished = msg.equals("logout");
+				} catch (IOException ioe) {
+					// disconnect if there is an error reading the input
+					finished = true;
 				}
-				catch(IOException ioe) {
-				    //disconnect if there is an error reading the input
-				    finished = true;
-				}
-		    }
-		    
-		    //clean up the connections before closing
-		    server.close();
-		    streamIn.close();
-		    streamOut.close();
-		    System.out.println("Server closed");
-		} 
-		catch (IOException e) {
-		    //print error if the server fails to create itself
-		    System.out.println("Error in creating the server");
-		    System.out.println(e);
+			}
+
+			// clean up the connections before closing
+			server.close();
+			streamIn.close();
+			streamOut.close();
+			System.out.println("Server closed");
+		} catch (IOException e) {
+			// print error if the server fails to create itself
+			System.out.println("Error in creating the server");
+			System.out.println(e);
 		}
-    }
-	
+	}
+
 	/**
 	 * Sends a message to the data output stream
-	 * @throws IOException 
+	 * 
+	 * @throws IOException
 	 */
 	protected void sendMessage(String msg) throws IOException {
-	    streamOut.writeUTF(msg);
-	    streamOut.flush();
-	    System.out.println("Message sent: " +msg);
+		streamOut.writeUTF(msg);
+		streamOut.flush();
+		System.out.println("Message sent: " + msg);
 	}
-	
+
 	/**
-	 * Process an incoming message by detecting the type of request
-	 *    and calling corresponding function
-	 * Messaage type: REGISTER, LOGIN, NEWKEY, GETKEY, etc.
+	 * Process an incoming message by detecting the type of request and calling
+	 * corresponding function Messaage type: REGISTER, LOGIN, NEWKEY, GETKEY, etc.
+	 * 
 	 * @param msg
 	 * @return the server's response
 	 */
 	protected String processMessage(String msg) {
-		if(msg.startsWith("REGISTER")) {
+		if (msg.startsWith("REGISTER")) {
 			String[] components = msg.split(" ");
 			try {
 				String username = components[1];
 				String password = components[2];
 				return createUser(username, password);
-			} catch(Exception e) {
+			} catch (Exception e) {
 				return "Failed to create an account. Please try again.";
+			}
+		} else if (msg.startsWith("LOGIN")) {
+			String[] components = msg.split(" ");
+			try {
+				String username = components[1];
+				String password = components[2];
+				return login(username, password);
+			} catch (Exception e) {
+				return ". Please try again.";
 			}
 		}
 		return "Incorrect message format. Please try again.";
 	}
-	
+
+	protected String login(String username, String password) throws IOException {
+		// check if already exists
+		File f = new File("./" + username); // TODO: encrypt to protect usernames
+		if (!f.exists() || !f.isDirectory()) {
+			return "No username/password pair. Please try again.";
+		}
+
+		// load the password on the file and check if it matches the input password
+		File passwordFile = new File("./" + username + "/pw");
+		Scanner passwordReader = new Scanner(passwordFile);
+		String savedPassword = passwordReader.nextLine();
+		passwordReader.close();
+
+		// log-in if passwords match
+		if (savedPassword.equals(password)) {
+			return "Successfully logged in";
+		}
+		throw new IOException("Login failed"); // fail due to internal file system issues
+	}
+
 	/**
 	 * 
 	 * @param username
@@ -104,25 +132,26 @@ public class Server {
 	 * @throws IOException
 	 */
 	protected String createUser(String username, String password) throws IOException {
-		
-		//check if already exists
-		File f = new File("./"+username); //TODO: encrypt to protect usernames
+
+		// check if already exists
+		File f = new File("./" + username); // TODO: encrypt to protect usernames
 		if (f.exists() && f.isDirectory()) {
-		   return "Username already in use. Please pick a different username.";
+			return "Username already in use. Please pick a different username.";
 		}
-		
-		//create the account with the given password
-		if(f.mkdir()) {
-			FileOutputStream fos = new FileOutputStream("./"+username+"/pw");
-			fos.write(password.getBytes("utf-8")); //TODO: encrypt to protect passwords
+
+		// create the account with the given password
+		if (f.mkdir()) {
+			FileOutputStream fos = new FileOutputStream("./" + username + "/pw");
+			fos.write(password.getBytes("utf-8")); // TODO: encrypt to protect passwords
 			fos.close();
 			return "Successfully created an account.";
 		}
-		throw new IOException(); //fail to create due to internal file systems issues
+		throw new IOException(); // fail to create due to internal file systems issues
 	}
-	
+
 	/**
 	 * Decode Base64 string to byte[]
+	 * 
 	 * @param str
 	 * @return decode bytes
 	 */
@@ -130,12 +159,12 @@ public class Server {
 		Base64.Decoder decoder = Base64.getMimeDecoder();
 		return decoder.decode(str);
 	}
-	
-    public static void main(String[] args) throws Exception {
-    	try {
-    		new Server();
-    	} catch (Exception e) {
-	    	e.printStackTrace();
-	    }
-    }
+
+	public static void main(String[] args) throws Exception {
+		try {
+			new Server();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
 }
