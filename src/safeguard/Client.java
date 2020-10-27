@@ -11,6 +11,8 @@ import java.net.Socket;
 import java.util.Base64;
 import java.util.Scanner;
 
+import password.PasswordStrength;
+
 /**
  * @author Mui Tanprasert & Alex Franklin
  *
@@ -128,14 +130,14 @@ public class Client {
 			System.out.print("Username: ");
 			String username = console.nextLine();
 			while (username.contains(" ")) {
-				System.out.print("Username cannot contain space. Please choose another username: ");
+				System.out.print("Invalid username. Re-enter username: ");
 				username = console.nextLine();
 			}
 			// prompt for a password
 			System.out.print("Password: ");
 			String password = console.nextLine();
 			while (username.contains(" ")) {
-				System.out.print("Password cannot contain space. Please choose another password: ");
+				System.out.print("Invalid password. Re-enter password: ");
 				password = console.nextLine();
 			}
 
@@ -161,17 +163,23 @@ public class Client {
 			// prompt for a username
 			System.out.print("Username: ");
 			String username = console.nextLine();
-			while (username.contains(" ")) {
-				System.out.print("Username cannot contain space. Please choose another username: ");
+			while(username.contains(" ")) { // because we use space as delimiter
+				System.out.print("Username cannot contain space. Please choose another password: ");
 				username = console.nextLine();
 			}
 
 			// prompt for a password
 			System.out.print("Password: ");
 			String password = console.nextLine();
-			while (password.contains(" ")) {
-				System.out.print("Password cannot contain space. Please choose another password: ");
+			PasswordStrength checker = new PasswordStrength();
+			boolean strong = checker.check_strength(password);
+			while (!strong || password.contains(" ")) {
+				if(!strong)
+					System.out.print("Weak password. Please choose another password: ");
+				else
+					System.out.print("Password cannot contain space. Please choose another password: ");
 				password = console.nextLine();
+				strong = checker.check_strength(password);
 			}
 
 			// send a request to create an account
@@ -189,7 +197,7 @@ public class Client {
 	 */
 	protected void createKey() throws IOException {
 		String response = null;
-		// do {
+		
 		// prompt for a key name
 		System.out.print("Key name: ");
 		String keyName = console.nextLine();
@@ -210,7 +218,6 @@ public class Client {
 		sendMessage("NEWKEY " + session_username + " " + keyName + " " + key);
 		response = streamIn.readUTF();
 		System.out.println(response);
-		// } while (!response.equals("Successfully created a new key"));
 	}
 
 	/**
@@ -221,7 +228,7 @@ public class Client {
 	 */
 	protected void loadKey() throws IOException {
 		String response = null;
-		// do {
+		
 		// prompt for a key name
 		System.out.print("Key name: ");
 		String keyName = console.nextLine();
@@ -234,9 +241,6 @@ public class Client {
 		sendMessage("LOADKEY " + session_username + " " + keyName);
 		response = streamIn.readUTF();
 		System.out.println(response);
-
-		// check if the loading was a success
-		// } while (!response.split(" ")[0].equals("Success!"));
 	}
 
 	/**

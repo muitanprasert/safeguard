@@ -9,9 +9,12 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.Scanner;
 
@@ -86,8 +89,8 @@ public class Server {
 		if (msg.startsWith("REGISTER")) {
 			String[] components = msg.split(" ");
 			try {
-				String username = components[1];
-				String password = components[2];
+				String username = hash(components[1]);
+				String password = hash(components[2]);
 				return createUser(username, password);
 			} catch (Exception e) {
 				return "Failed to create an account. Please try again.";
@@ -95,8 +98,8 @@ public class Server {
 		} else if (msg.startsWith("LOGIN")) {
 			String[] components = msg.split(" ");
 			try {
-				String username = components[1];
-				String password = components[2];
+				String username = hash(components[1]);
+				String password = hash(components[2]);
 				return login(username, password);
 			} catch (Exception e) {
 				return ". Please try again.";
@@ -104,21 +107,21 @@ public class Server {
 		} else if (msg.startsWith("NEWKEY")) {
 			String[] components = msg.split(" ");
 			try {
-				String username = components[1];
-				String keyName = components[2];
+				String username = hash(components[1]);
+				String keyName = shorthash(components[2]);
 				String key = components[3];
 				return createKey(username, keyName, key);
 			} catch (Exception e) {
-				return ". Please try again.";
+				return "An error occurred. Please try again.";
 			}
 		} else if (msg.startsWith("LOADKEY")) {
 			String[] components = msg.split(" ");
 			try {
-				String username = components[1];
-				String keyName = components[2];
+				String username = hash(components[1]);
+				String keyName = shorthash(components[2]);
 				return loadKey(username, keyName);
 			} catch (Exception e) {
-				return e.getMessage() + ". Please try again.";
+				return e.getMessage() + "Failed to load key. Please try again.";
 			}
 		}
 		return "Incorrect message format. Please try again.";
@@ -134,7 +137,7 @@ public class Server {
 	 */
 	protected String login(String username, String password) throws IOException {
 		// check if already exists
-		File f = new File("./" + username); // TODO: encrypt to protect usernames
+		File f = new File("./" + username);
 		if (!f.exists() || !f.isDirectory()) {
 			return "No username/password pair. Please try again.";
 		}
@@ -153,7 +156,7 @@ public class Server {
 	}
 
 	/**
-	 * Create a new user on the file system with the specifiedd username and
+	 * Create a new user on the file system with the specified username and
 	 * password
 	 * 
 	 * @param username
@@ -162,8 +165,9 @@ public class Server {
 	 * @throws IOException
 	 */
 	protected String createUser(String username, String password) throws IOException {
+		
 		// check if already exists
-		File f = new File("./" + username); // TODO: encrypt to protect usernames
+		File f = new File("./" + username);
 		if (f.exists() && f.isDirectory()) {
 			return "Username already in use. Please pick a different username.";
 		}
@@ -171,7 +175,7 @@ public class Server {
 		// create the account with the given password
 		if (f.mkdir()) {
 			FileOutputStream fos = new FileOutputStream("./" + username + "/pw");
-			fos.write(password.getBytes("utf-8")); // TODO: encrypt to protect passwords
+			fos.write(decode64(password));
 			fos.close();
 			return "Successfully created an account.";
 		}
@@ -188,20 +192,22 @@ public class Server {
 	 * @throws IOException
 	 */
 	protected String createKey(String username, String keyName, String key) throws IOException {
-		// check that we are not overwritting the password
+		System.out.println(username);
+		
+		// check that we are not overwriting the password
 		if (keyName.equals("pw")) {
 			return "Key name cannot be \"pw\", please choose a different key name";
 		}
 
 		// check if this username exists
-		File f = new File("./" + username); // TODO: encrypt to protect usernames
-		if (!f.exists() && !f.isDirectory()) {
-			return "No such username, message may have been corrupted. Try again or reconnect to server";
+		File f = new File("./" + username);
+		if (!f.exists() || !f.isDirectory()) {
+			return "No such username. Message may have been corrupted. Try again or reconnect to server";
 		}
 
 		// create the keyName file with the given key
-		FileOutputStream fos = new FileOutputStream("./" + username + "/" + keyName);
-		fos.write(key.getBytes("utf-8")); // TODO: encrypt to protect passwords
+		FileWriter fos = new FileWriter(new File(f, keyName));
+		fos.write(key);
 		fos.close();
 		return "Successfully created a new key";
 
@@ -209,9 +215,9 @@ public class Server {
 
 	protected String loadKey(String username, String keyName) {
 		// check if this username exists
-		File f = new File("./" + username); // TODO: encrypt to protect usernames
-		if (!f.exists() && !f.isDirectory()) {
-			return "No such username, message may have been corrupted. Try again or reconnect to server";
+		File f = new File("./" + username);
+		if (!f.exists() || !f.isDirectory()) {
+			return "No such username. Message may have been corrupted. Try again or reconnect to server";
 		}
 
 		// load the password on the file and check if it matches the input password
@@ -222,12 +228,23 @@ public class Server {
 			keyReader.close();
 
 			// log-in if passwords match
-			return "Success! Key under name \"" + keyName + "\" is: " + savedKey;
+			return "Success! The requested key is: " + savedKey;
 		} catch (FileNotFoundException e) {
 			return "No such file, try running \"create key \" first";
 		}
 	}
 
+	/**
+	 * Helper encoder from bytes to Base64 string
+	 * 
+	 * @param bytes
+	 * @return encoded string
+	 */
+	private String encode64(byte[] bytes) {
+		Base64.Encoder encoder = Base64.getMimeEncoder();
+		return encoder.encodeToString(bytes);
+	}
+	
 	/**
 	 * Decode Base64 string to byte[]
 	 * 
@@ -237,6 +254,32 @@ public class Server {
 	private byte[] decode64(String str) {
 		Base64.Decoder decoder = Base64.getMimeDecoder();
 		return decoder.decode(str);
+	}
+	
+	/**
+	 * Helper function to hash with SHA-256
+	 * @param str
+	 * @return
+	 * @throws NoSuchAlgorithmException
+	 */
+	private String hash(String str) throws NoSuchAlgorithmException {
+		MessageDigest md = MessageDigest.getInstance("SHA-256");
+		md.update(str.getBytes());
+		byte[] macKey = md.digest();
+		return encode64(macKey);
+	}
+	
+	/**
+	 * Helper function to hash MD5
+	 * @param str
+	 * @return
+	 * @throws NoSuchAlgorithmException
+	 */
+	private String shorthash(String str) throws NoSuchAlgorithmException {
+		MessageDigest md = MessageDigest.getInstance("MD5");
+		md.update(str.getBytes());
+		byte[] macKey = md.digest();
+		return encode64(macKey);
 	}
 
 	public static void main(String[] args) throws Exception {
