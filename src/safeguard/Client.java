@@ -50,7 +50,7 @@ public class Client {
 	public Client() throws Exception {
 		
 		// IMPORTANT: change to another machine's address when not running locally
-		String serverAddress = "localhost"; //"pom-itb-cs2.campus.pomona.edu";
+		String serverAddress = "localhost"; //"pom-itb-cs2.campus.pomona.edu"; //
 
 		try {
 			// connect to the server
