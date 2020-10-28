@@ -6,6 +6,7 @@ _Current status_
 * Requirements document ready for M2; others partially edited
 * Log-in
 * Key creation and loading
+* NOTE: It seems reasonable to allow spaces within key. Should we change it?
 
 _Running Instructions_
 * In the safeguard directory run

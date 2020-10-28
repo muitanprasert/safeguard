@@ -13,10 +13,18 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.security.Key;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.PrivateKey;
+import java.security.Signature;
 import java.util.Base64;
 import java.util.Scanner;
+
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import java.security.Key;
 
 /**
  * @author Mui Tanprasert & Alex Franklin
@@ -24,8 +32,9 @@ import java.util.Scanner;
  */
 public class Server {
 	private int portNumber = 1999;
-	DataOutputStream streamOut;
-	DataInputStream streamIn;
+	private DataOutputStream streamOut;
+	private DataInputStream streamIn;
+	private static final int KEY_LENGTH_AES = 128;
 
 	public Server() throws Exception {
 		try {
@@ -39,6 +48,12 @@ public class Server {
 			streamIn = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
 			streamOut = new DataOutputStream(clientSocket.getOutputStream());
 
+			sendMessage(getCertificate());
+			
+			// key transport protocol
+			
+			
+						
 			boolean finished = false;
 
 			// read incoming messages
@@ -66,6 +81,23 @@ public class Server {
 			System.out.println(e);
 		}
 	}
+	
+	protected String getCertificate() throws Exception {
+		// generate public/private key
+		Gen gen = new Gen();
+		gen.generateEncrptionKey("B");
+		Key pubKeyB = Gen.getKeyFromFile("B", "pk", "RSA");
+		String publicB = encode64(pubKeyB.getEncoded());
+		
+		// sign with CA secret key
+		PrivateKey signKeyCA = (PrivateKey) Gen.getKeyFromFile("CA", "sk", "DSA");
+		Signature sign = Signature.getInstance("SHA256withDSA");
+		sign.initSign(signKeyCA);
+		sign.update(decode64(publicB));
+		String signature = encode64(sign.sign());
+		
+		return publicB+","+signature;
+	}
 
 	/**
 	 * Sends a message to the data output stream
@@ -75,7 +107,6 @@ public class Server {
 	protected void sendMessage(String msg) throws IOException {
 		streamOut.writeUTF(msg);
 		streamOut.flush();
-		System.out.println("Message sent: " + msg);
 	}
 
 	/**

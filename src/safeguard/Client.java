@@ -8,8 +8,20 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
+import java.security.Signature;
+import java.security.SignatureException;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.Scanner;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import java.security.Key;
 
 import password.PasswordStrength;
 
@@ -21,30 +33,45 @@ public class Client {
 
 	// instance variables
 	private int portNumber = 1999;
-	DataOutputStream streamOut;
-	DataInputStream streamIn;
-	Scanner console;
-	// boolean loggedin = false;
+	private DataOutputStream streamOut;
+	private DataInputStream streamIn;
+	private Scanner console;
+	private Socket serverSocket;
 
 	// the username that is currently logged in
 	private String session_username;
 
 	/**
 	 * Constructor handles the central control of operations
+	 * @throws Exception 
 	 */
-	public Client() {
+	public Client() throws Exception {
+		
 		// IMPORTANT: change to another machine's address when not running locally
 		String serverAddress = "localhost";
 
 		try {
 			// connect to the server
 			System.out.println("Connecting to Server at (" + portNumber + ", " + serverAddress + ")...");
-			Socket serverSocket = new Socket(serverAddress, portNumber);
+			serverSocket = new Socket(serverAddress, portNumber);
 			System.out.println("Connected to Server");
 
 			streamOut = new DataOutputStream(serverSocket.getOutputStream());
 			streamIn = new DataInputStream(new BufferedInputStream(serverSocket.getInputStream()));
 			console = new Scanner(System.in, "utf-8");
+			
+			// verify certificate: server's public key and signature
+			Key pubKeyB = verifyCertificate();
+			
+			// key transport protocol
+			Gen gen = new Gen();
+			try{
+				gen.generateSigningKey("A");
+			}
+			catch(Exception e) {
+				System.out.println(e);
+			}
+			
 
 			// log-in/register
 			String line = "";
@@ -54,21 +81,19 @@ public class Client {
 				System.out.println("Please choose \"register\" or \"log-in\"?");
 				line = console.nextLine().toLowerCase();
 			}
-
+			
 			if (line.equals("register")) {
 				try {
 					register();
-					System.out.println("Would you like to register or log-in?");
-					line = console.nextLine().toLowerCase();
+					System.out.println("You can now log-in with your chosen username and password.");
+					line = "login";
 				} catch (Exception e) {
 					System.out.println(e.getMessage());
 					System.out.println("Registration failed. Terminating connection.");
 					line = "logout";
 				}
-			} else {
-				// TODO log-in
-				// check if the account exists too
 			}
+			
 			if (line.equals("log-in")) {
 				try {
 					login();
@@ -105,10 +130,7 @@ public class Client {
 
 			// close all the sockets and console
 			System.out.println("Logging out of the server...");
-			console.close();
-			streamOut.close();
-			streamIn.close();
-			serverSocket.close();
+			
 			System.out.println("Logout successful");
 		} catch (IOException e) {
 			// print error
@@ -242,6 +264,39 @@ public class Client {
 		response = streamIn.readUTF();
 		System.out.println(response);
 	}
+	
+	/**
+	 * Verify the server's certificate and return their public key if successful
+	 * @return
+	 * @throws Exception
+	 */
+	protected Key verifyCertificate() throws Exception{
+		boolean verified;
+		
+		// get certificate as a message from server
+		try {
+			String cert = streamIn.readUTF();
+			byte[] publicB = decode64(cert.split(",")[0]);
+			byte[] signedPublicB = decode64(cert.split(",")[1]);
+			PublicKey verificationKeyCA = (PublicKey) Gen.getKeyFromFile("src/CA", "pk", "DSA");
+			Signature sign = Signature.getInstance("SHA256withDSA");
+			sign.initVerify(verificationKeyCA);
+			sign.update(publicB);
+			verified = sign.verify(signedPublicB);
+			
+			// terminate immediately if the certificate does not verify
+			if(verified) {
+				System.out.println("Certificate verified.");
+				KeyFactory kf = KeyFactory.getInstance("RSA");
+				X509EncodedKeySpec spec = new X509EncodedKeySpec(publicB);
+				return kf.generatePublic(spec);
+			}
+			else
+				throw new Exception();
+		} catch(Exception e) {
+			throw new Exception("Certificate verification failed. Terminating.");
+		}
+	}
 
 	/**
 	 * Sends a message to the data output stream
@@ -251,7 +306,6 @@ public class Client {
 	protected void sendMessage(String msg) throws IOException {
 		streamOut.writeUTF(msg);
 		streamOut.flush();
-		System.out.println("Message sent");
 	}
 
 	/**
@@ -274,6 +328,17 @@ public class Client {
 	private byte[] decode64(String str) {
 		Base64.Decoder decoder = Base64.getMimeDecoder();
 		return decoder.decode(str);
+	}
+	
+	/**
+	 * Helper function to close all sockets
+	 * @throws IOException 
+	 */
+	private void closeSockets() throws IOException {
+		console.close();
+		streamOut.close();
+		streamIn.close();
+		serverSocket.close();
 	}
 
 	/**
