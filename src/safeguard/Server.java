@@ -35,6 +35,7 @@ public class Server {
 	private DataOutputStream streamOut;
 	private DataInputStream streamIn;
 	private static final int KEY_LENGTH_AES = 128;
+	private File workingDir;
 
 	public Server() throws Exception {
 		try {
@@ -55,6 +56,7 @@ public class Server {
 			
 						
 			boolean finished = false;
+			workingDir = new File("users");
 
 			// read incoming messages
 			while (!finished) {
@@ -133,7 +135,7 @@ public class Server {
 				String password = hash(components[2]);
 				return login(username, password);
 			} catch (Exception e) {
-				return ". Please try again.";
+				return "Please try again.";
 			}
 		} else if (msg.startsWith("NEWKEY")) {
 			String[] components = msg.split(" ");
@@ -168,13 +170,13 @@ public class Server {
 	 */
 	protected String login(String username, String password) throws IOException {
 		// check if already exists
-		File f = new File("./" + username);
+		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
 			return "No username/password pair. Please try again.";
 		}
 
 		// load the password on the file and check if it matches the input password
-		File passwordFile = new File("./" + username + "/pw");
+		File passwordFile = new File(workingDir, username + "/pw");
 		Scanner passwordReader = new Scanner(passwordFile);
 		String savedPassword = passwordReader.nextLine();
 		passwordReader.close();
@@ -198,14 +200,15 @@ public class Server {
 	protected String createUser(String username, String password) throws IOException {
 		
 		// check if already exists
-		File f = new File("./" + username);
+		File f = new File(workingDir, username);
 		if (f.exists() && f.isDirectory()) {
 			return "Username already in use. Please pick a different username.";
 		}
 
 		// create the account with the given password
 		if (f.mkdir()) {
-			FileOutputStream fos = new FileOutputStream("./" + username + "/pw");
+			File pwf = new File(workingDir, username + "/pw");
+			FileOutputStream fos = new FileOutputStream(pwf);
 			fos.write(decode64(password));
 			fos.close();
 			return "Successfully created an account.";
@@ -231,7 +234,7 @@ public class Server {
 		}
 
 		// check if this username exists
-		File f = new File("./" + username);
+		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
 			return "No such username. Message may have been corrupted. Try again or reconnect to server";
 		}
@@ -246,14 +249,14 @@ public class Server {
 
 	protected String loadKey(String username, String keyName) {
 		// check if this username exists
-		File f = new File("./" + username);
+		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
 			return "No such username. Message may have been corrupted. Try again or reconnect to server";
 		}
 
 		// load the password on the file and check if it matches the input password
 		try {
-			File keyFile = new File("./" + username + "/" + keyName);
+			File keyFile = new File(workingDir, username + "/" + keyName);
 			Scanner keyReader = new Scanner(keyFile);
 			String savedKey = keyReader.nextLine();
 			keyReader.close();

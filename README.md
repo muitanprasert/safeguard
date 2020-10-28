@@ -6,7 +6,12 @@ _Current status_
 * Requirements document ready for M2; others partially edited
 * Log-in
 * Key creation and loading
-* NOTE: It seems reasonable to allow spaces within key. Should we change it?
+
+_Issues_
+* It seems reasonable to allow spaces within key. Should we change it?
+* For usability, it might be more reasonable to not hash key names so that we'd be able to list them for the user.
+* Currently relies on running Gen to create CA keys and ensure users/ directory exists.
+
 
 _Running Instructions_
 * In the safeguard directory run

@@ -40,6 +40,8 @@ public class Client {
 
 	// the username that is currently logged in
 	private String session_username;
+	
+	
 
 	/**
 	 * Constructor handles the central control of operations
@@ -48,7 +50,7 @@ public class Client {
 	public Client() throws Exception {
 		
 		// IMPORTANT: change to another machine's address when not running locally
-		String serverAddress = "localhost";
+		String serverAddress = "localhost"; //"pom-itb-cs2.campus.pomona.edu";
 
 		try {
 			// connect to the server
@@ -278,7 +280,7 @@ public class Client {
 			String cert = streamIn.readUTF();
 			byte[] publicB = decode64(cert.split(",")[0]);
 			byte[] signedPublicB = decode64(cert.split(",")[1]);
-			PublicKey verificationKeyCA = (PublicKey) Gen.getKeyFromFile("src/CA", "pk", "DSA");
+			PublicKey verificationKeyCA = (PublicKey) Gen.getKeyFromFile("CA", "pk", "DSA");
 			Signature sign = Signature.getInstance("SHA256withDSA");
 			sign.initVerify(verificationKeyCA);
 			sign.update(publicB);
@@ -294,6 +296,7 @@ public class Client {
 			else
 				throw new Exception();
 		} catch(Exception e) {
+			closeSockets();
 			throw new Exception("Certificate verification failed. Terminating.");
 		}
 	}

@@ -110,6 +110,7 @@ public class Gen {
 	 * @throws Exception
 	 */
 	protected static Key getKeyFromFile(String name, String postfix, String type) throws Exception {
+		
 		File f = new File(name + '.' + postfix);
 		DataInputStream dis = new DataInputStream(new FileInputStream(f));
 		byte[] keyBytes = new byte[(int) f.length()];
@@ -134,7 +135,12 @@ public class Gen {
 	 */
 	public static void main(String[] args) throws Exception {
 		Gen gen = new Gen();
-		gen.generateEncrptionKey("B");
-		gen.generateSigningKey("A");
+		gen.generateEncrptionKey("CA");
+		gen.generateSigningKey("CA");
+		
+		// set-up directory if it doesn't exist
+		File dir = new File("users");
+	    if (!dir.exists())
+	    	dir.mkdirs();
 	}
 }
