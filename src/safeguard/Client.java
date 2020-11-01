@@ -40,9 +40,9 @@ import password.PasswordStrength;
  */
 public class Client {
 	private static final int KEY_LENGTH_AES = 128;
+	private final int PORT_NUMBER = 2018;
 
 	// instance variables
-	private int portNumber = 2018;
 	private DataOutputStream streamOut;
 	private DataInputStream streamIn;
 	private Scanner console;
@@ -71,8 +71,8 @@ public class Client {
 
 		try {
 			// connect to the server
-			System.out.println("Connecting to Server at (" + portNumber + ", " + serverAddress + ")...");
-			serverSocket = new Socket(serverAddress, portNumber);
+			System.out.println("Connecting to Server at (" + PORT_NUMBER + ", " + serverAddress + ")...");
+			serverSocket = new Socket(serverAddress, PORT_NUMBER);
 			System.out.println("Connected to Server");
 
 			streamOut = new DataOutputStream(serverSocket.getOutputStream());
@@ -122,8 +122,9 @@ public class Client {
 
 				if (line.equals("log-in")) {
 					try {
-						login();
-						line = "";
+						if (!login()) {
+							line = "";
+						}
 					} catch (Exception e) {
 						System.out.println(e.getMessage());
 						System.out.println("Login failed. Terminating connection.");
@@ -175,7 +176,7 @@ public class Client {
 	 * @throws Exception
 	 * @throws NoSuchAlgorithmException
 	 */
-	protected void login() throws NoSuchAlgorithmException, Exception {
+	protected boolean login() throws NoSuchAlgorithmException, Exception {
 		String response = null;
 		// do {
 		// prompt for a username
@@ -199,9 +200,12 @@ public class Client {
 		System.out.println(response);
 
 		// on a successful login, set the session username for later key accesses
-		if (response.equals("Successfully logged in"))
+		if (response.equals("Successfully logged in")) {
 			session_username = username;
+			return true;
+		}
 		// } while (!response.equals("Successfully logged in"));
+		return false;
 	}
 
 	/**
@@ -212,34 +216,34 @@ public class Client {
 	 */
 	protected void register() throws NoSuchAlgorithmException, Exception {
 		String response = null;
-		do {
-			// prompt for a username
-			System.out.print("Username: ");
-			String username = console.nextLine();
-			while (username.contains(" ")) { // because we use space as delimiter
-				System.out.print("Username cannot contain space. Please choose another password: ");
-				username = console.nextLine();
-			}
+		// do {
+		// prompt for a username
+		System.out.print("Username: ");
+		String username = console.nextLine();
+		while (username.contains(" ")) { // because we use space as delimiter
+			System.out.print("Username cannot contain space. Please choose another password: ");
+			username = console.nextLine();
+		}
 
-			// prompt for a password
-			System.out.print("Password: ");
-			String password = console.nextLine();
-			PasswordStrength checker = new PasswordStrength();
-			boolean strong = checker.check_strength(password);
-			while (!strong || password.contains(" ")) {
-				if (!strong)
-					System.out.print("Weak password. Please choose another password: ");
-				else
-					System.out.print("Password cannot contain space. Please choose another password: ");
-				password = console.nextLine();
-				strong = checker.check_strength(password);
-			}
+		// prompt for a password
+		System.out.print("Password: ");
+		String password = console.nextLine();
+		PasswordStrength checker = new PasswordStrength();
+		boolean strong = checker.check_strength(password);
+		while (!strong || password.contains(" ")) {
+			if (!strong)
+				System.out.print("Weak password. Please choose another password: ");
+			else
+				System.out.print("Password cannot contain space. Please choose another password: ");
+			password = console.nextLine();
+			strong = checker.check_strength(password);
+		}
 
-			// send a request to create an account
-			sendMessage("REGISTER " + username + " " + password);
-			response = streamIn.readUTF();
-			System.out.println(response);
-		} while (!response.equals("Successfully created an account."));
+		// send a request to create an account
+		sendMessage("REGISTER " + username + " " + password);
+		response = streamIn.readUTF();
+		System.out.println(response);
+		// } while (!response.equals("Successfully created an account."));
 	}
 
 	/**

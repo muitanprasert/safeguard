@@ -57,12 +57,12 @@ public class Gen {
 			FileOutputStream fos = new FileOutputStream(filename + ".pk");
 			fos.write(publicKey.getEncoded());
 			fos.close();
-			//System.out.println("Successfully wrote public key.");
+			// System.out.println("Successfully wrote public key.");
 
 			fos = new FileOutputStream(filename + ".sk");
 			fos.write(privKey.getEncoded());
 			fos.close();
-			//System.out.println("Successfully wrote private key");
+			// System.out.println("Successfully wrote private key");
 
 		} catch (IOException e) {
 			System.out.println("An error occurred.");
@@ -88,19 +88,19 @@ public class Gen {
 			FileOutputStream fos = new FileOutputStream(filename + ".pk");
 			fos.write(publicKey.getEncoded());
 			fos.close();
-			//System.out.println("Successfully wrote public key.");
+			// System.out.println("Successfully wrote public key.");
 
 			fos = new FileOutputStream(filename + ".sk");
 			fos.write(privKey.getEncoded());
 			fos.close();
-			//System.out.println("Successfully wrote private key");
+			// System.out.println("Successfully wrote private key");
 
 		} catch (IOException e) {
 			System.out.println("An error occurred.");
 			e.printStackTrace();
 		}
 	}
-	
+
 	/**
 	 * Method for retrieving a key from a file
 	 * 
@@ -110,7 +110,7 @@ public class Gen {
 	 * @throws Exception
 	 */
 	protected static Key getKeyFromFile(String name, String postfix, String type) throws Exception {
-		
+
 		File f = new File(name + '.' + postfix);
 		DataInputStream dis = new DataInputStream(new FileInputStream(f));
 		byte[] keyBytes = new byte[(int) f.length()];
@@ -137,10 +137,10 @@ public class Gen {
 		Gen gen = new Gen();
 		gen.generateEncrptionKey("CA");
 		gen.generateSigningKey("CA");
-		
+
 		// set-up directory if it doesn't exist
 		File dir = new File("users");
-	    if (!dir.exists())
-	    	dir.mkdirs();
+		if (!dir.exists())
+			dir.mkdirs();
 	}
 }
