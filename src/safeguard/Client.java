@@ -9,6 +9,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.security.KeyFactory;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -23,7 +24,12 @@ import java.util.Scanner;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
+import javax.crypto.Mac;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+
 import java.security.Key;
 
 import password.PasswordStrength;
@@ -46,9 +52,12 @@ public class Client {
 	public Base64.Decoder decoder = Base64.getMimeDecoder();
 
 	private byte[] sharedKey;
+	private byte[] macKey;
 
 	// the username that is currently logged in
 	private String session_username;
+
+	private int msgNumber = 0;
 
 	/**
 	 * Constructor handles the central control of operations
@@ -81,6 +90,11 @@ public class Client {
 				// generate key transfer message
 				streamOut.writeUTF(generateKeyTransferMessage(pubKeyB));
 				streamOut.flush();
+
+				// hash to get a different key for MAC
+				MessageDigest md = MessageDigest.getInstance("MD5");
+				md.update(sharedKey);
+				macKey = md.digest();
 			} catch (Exception e) {
 				closeSockets();
 				System.out.println(e);
@@ -89,32 +103,33 @@ public class Client {
 
 			// log-in/register
 			String line = "";
-			System.out.println("Would you like to register or log-in?");
-			line = console.nextLine().toLowerCase();
 			while (!line.equals("register") && !line.equals("log-in")) {
 				System.out.println("Please choose \"register\" or \"log-in\"?");
 				line = console.nextLine().toLowerCase();
-			}
 
-			if (line.equals("register")) {
-				try {
-					register();
-					System.out.println("You can now log-in with your chosen username and password.");
-					line = "login";
-				} catch (Exception e) {
-					System.out.println(e.getMessage());
-					System.out.println("Registration failed. Terminating connection.");
-					line = "logout";
+				if (line.equals("register")) {
+					try {
+						register();
+						System.out.println("You can now log-in with your chosen username and password.");
+						line = "";
+					} catch (Exception e) {
+						System.out.println(e.getMessage());
+						System.out.println("Registration failed. Terminating connection.");
+						line = "logout";
+						break;
+					}
 				}
-			}
 
-			if (line.equals("log-in")) {
-				try {
-					login();
-				} catch (Exception e) {
-					System.out.println(e.getMessage());
-					System.out.println("Login failed. Terminating connection.");
-					line = "logout";
+				if (line.equals("log-in")) {
+					try {
+						login();
+						line = "";
+					} catch (Exception e) {
+						System.out.println(e.getMessage());
+						System.out.println("Login failed. Terminating connection.");
+						line = "logout";
+						break;
+					}
 				}
 			}
 
@@ -157,43 +172,45 @@ public class Client {
 	 * Prompt the user to enter their username and password to gain access to their
 	 * files on the server
 	 * 
-	 * @throws IOException
+	 * @throws Exception
+	 * @throws NoSuchAlgorithmException
 	 */
-	protected void login() throws IOException {
+	protected void login() throws NoSuchAlgorithmException, Exception {
 		String response = null;
-		do {
-			// prompt for a username
-			System.out.print("Username: ");
-			String username = console.nextLine();
-			while (username.contains(" ")) {
-				System.out.print("Invalid username. Re-enter username: ");
-				username = console.nextLine();
-			}
-			// prompt for a password
-			System.out.print("Password: ");
-			String password = console.nextLine();
-			while (username.contains(" ")) {
-				System.out.print("Invalid password. Re-enter password: ");
-				password = console.nextLine();
-			}
+		// do {
+		// prompt for a username
+		System.out.print("Username: ");
+		String username = console.nextLine();
+		while (username.contains(" ")) {
+			System.out.print("Invalid username. Re-enter username: ");
+			username = console.nextLine();
+		}
+		// prompt for a password
+		System.out.print("Password: ");
+		String password = console.nextLine();
+		while (username.contains(" ")) {
+			System.out.print("Invalid password. Re-enter password: ");
+			password = console.nextLine();
+		}
 
-			// send a request to create an account
-			sendMessage("LOGIN " + username + " " + password);
-			response = streamIn.readUTF();
-			System.out.println(response);
+		// send a request to create an account
+		sendMessage("LOGIN " + username + " " + password);
+		response = streamIn.readUTF();
+		System.out.println(response);
 
-			// on a successful login, set the session username for later key accesses
-			if (response.equals("Successfully logged in"))
-				session_username = username;
-		} while (!response.equals("Successfully logged in"));
+		// on a successful login, set the session username for later key accesses
+		if (response.equals("Successfully logged in"))
+			session_username = username;
+		// } while (!response.equals("Successfully logged in"));
 	}
 
 	/**
 	 * Prompt the user to enter username and password and register with the server
 	 * 
-	 * @throws IOException
+	 * @throws Exception
+	 * @throws NoSuchAlgorithmException
 	 */
-	protected void register() throws IOException {
+	protected void register() throws NoSuchAlgorithmException, Exception {
 		String response = null;
 		do {
 			// prompt for a username
@@ -229,9 +246,10 @@ public class Client {
 	 * Prompt the user to enter a key name and a key, then adds this pair to the
 	 * file system for this user
 	 * 
-	 * @throws IOException
+	 * @throws Exception
+	 * @throws NoSuchAlgorithmException
 	 */
-	protected void createKey() throws IOException {
+	protected void createKey() throws NoSuchAlgorithmException, Exception {
 		String response = null;
 
 		// prompt for a key name
@@ -260,9 +278,10 @@ public class Client {
 	 * Prompts the user for a key name, and gets the key associated with this name
 	 * on the file system for this user
 	 * 
-	 * @throws IOException
+	 * @throws Exception
+	 * @throws NoSuchAlgorithmException
 	 */
-	protected void loadKey() throws IOException {
+	protected void loadKey() throws NoSuchAlgorithmException, Exception {
 		String response = null;
 
 		// prompt for a key name
@@ -326,10 +345,9 @@ public class Client {
 
 		// save the shared key and concate it with the name of the client
 		sharedKey = secretKey.getEncoded(); // encryption key
-		byte[] messageToEncrypt = concatBytes("A,".getBytes(), sharedKey);
+		byte[] messageToEncrypt = concatBytes("Alice,".getBytes(), sharedKey);
 		System.out.println("Shared key in Base64: " + encoder.encodeToString(sharedKey));
 
-		
 		// encode the client name + shared key with B's public key
 //		Key transferPubKeyB = Gen.getKeyFromFile("B", "pk", "RSA");
 		cipherRSA.init(Cipher.ENCRYPT_MODE, pubKeyB, random);
@@ -342,14 +360,14 @@ public class Client {
 
 		// get the client's signing key
 		PrivateKey signKeyA = (PrivateKey) Gen.getKeyFromFile("A", "sk", "DSA");
-		
+
 		// generate the signature for the message with the client's signing key
 		Signature sign = Signature.getInstance("SHA256withDSA");
 		sign.initSign(signKeyA);
-		
+
 		sign.update(decoder.decode(keyTransportMessage));
 		String signature = encoder.encodeToString(sign.sign());
-		
+
 		// return the full message plus the signature of the message
 		return keyTransportMessage + "," + signature;
 	}
@@ -358,8 +376,31 @@ public class Client {
 	 * Sends a message to the data output stream
 	 * 
 	 * @throws IOException
+	 * @throws Exception
+	 * @throws NoSuchAlgorithmException
 	 */
-	protected void sendMessage(String msg) throws IOException {
+	protected void sendMessage(String msg) throws IOException, NoSuchAlgorithmException, Exception {
+		// tag message number in front
+		msg = pad8(msgNumber) + msg;
+
+		// encrypt message with the shared key
+		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes("UTF-8"));
+		SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
+		Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+		cipherAES.init(Cipher.ENCRYPT_MODE, skeySpec, iv);
+
+		// getBytes okay because line is human-readable text
+		msg = encoder.encodeToString(cipherAES.doFinal(msg.getBytes()));
+
+		Mac mac = Mac.getInstance("HmacSHA256");
+		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
+		String tag = encoder.encodeToString(mac.doFinal(msg.getBytes()));
+		msg = tag + msg;
+
+		// increment message number
+		msgNumber++;
+
+		// send encrypted message to the server
 		streamOut.writeUTF(msg);
 		streamOut.flush();
 	}
@@ -410,6 +451,18 @@ public class Client {
 		streamOut.close();
 		streamIn.close();
 		serverSocket.close();
+	}
+
+	/**
+	 * pads the integer n with 8 zeros
+	 * 
+	 * @param n
+	 * @return
+	 */
+	private String pad8(int n) {
+		String strN = Integer.toString(n);
+		String padding = "00000000".substring(0, 8 - strN.length());
+		return padding + strN;
 	}
 
 	/**

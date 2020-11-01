@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
@@ -31,7 +32,11 @@ import java.util.Scanner;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
+import javax.crypto.Mac;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+
 import java.security.Key;
 
 /**
@@ -39,13 +44,16 @@ import java.security.Key;
  *
  */
 public class Server {
+	private static final int KEY_LENGTH_AES = 128;
+	private static final int MAC_LENGTH = 44;
+
 	private int portNumber = 2018;
 	private DataOutputStream streamOut;
 	private DataInputStream streamIn;
-	private static final int KEY_LENGTH_AES = 128;
 	private File workingDir;
 
 	private byte[] sharedKey;
+	private byte[] savedMacKey;
 
 	public Base64.Encoder encoder = Base64.getMimeEncoder();
 	public Base64.Decoder decoder = Base64.getMimeDecoder();
@@ -72,7 +80,8 @@ public class Server {
 			// hash to get a different key for MAC
 			MessageDigest md = MessageDigest.getInstance("MD5");
 			md.update(sharedKey);
-			byte[] macKey = md.digest();
+			System.out.println(sharedKey);
+			savedMacKey = md.digest();
 
 			workingDir = new File("users");
 
@@ -80,6 +89,32 @@ public class Server {
 			while (!finished) {
 				try {
 					String msg = streamIn.readUTF();
+
+					// verify that the message is correct with the MAC tag
+					String tag = msg.substring(0, MAC_LENGTH);
+					msg = msg.substring(MAC_LENGTH);
+
+					Mac mac = Mac.getInstance("HmacSHA256");
+					mac.init(new SecretKeySpec(savedMacKey, "HmacSHA256"));
+
+					String correctTag = encoder.encodeToString((mac.doFinal(msg.getBytes())));
+					System.out.println(correctTag);
+					System.out.println(tag);
+					if (!tag.equals(correctTag)) {
+						System.out.println("MAC tag didn't match. Closing connection...");
+						break;
+					}
+
+					// decrypt the message
+					IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes("UTF-8"));
+					SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
+
+					Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+					cipherAES.init(Cipher.DECRYPT_MODE, skeySpec, iv);
+
+					msg = new String(cipherAES.doFinal(decoder.decode(msg)), StandardCharsets.UTF_8);
+					msg = msg.substring(8, msg.length()); // remove the message number from the message
+
 					System.out.println("Received msg: " + msg);
 					String response = processMessage(msg);
 					sendMessage(response);
@@ -100,6 +135,8 @@ public class Server {
 			System.out.println("Error in creating the server");
 			System.out.println(e);
 		}
+		
+		
 	}
 
 	protected String getCertificate() throws Exception {
@@ -153,7 +190,7 @@ public class Server {
 				String password = hash(components[2]);
 				return login(username, password);
 			} catch (Exception e) {
-				return "Please try again.";
+				return "Invalid credentials";
 			}
 		} else if (msg.startsWith("NEWKEY")) {
 			String[] components = msg.split(" ");
@@ -190,7 +227,7 @@ public class Server {
 		// check if already exists
 		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
-			return "No username/password pair. Please try again.";
+			return "Invalid credentials";
 		}
 
 		// load the password on the file and check if it matches the input password
@@ -198,12 +235,14 @@ public class Server {
 		Scanner passwordReader = new Scanner(passwordFile);
 		String savedPassword = passwordReader.nextLine();
 		passwordReader.close();
-
+		System.out.println(savedPassword);
+		System.out.println(password);
+		
 		// log-in if passwords match
 		if (savedPassword.equals(password)) {
 			return "Successfully logged in";
 		}
-		throw new IOException("Login failed"); // fail due to internal file system issues
+		throw new IOException("Invalid credentials");
 	}
 
 	/**
