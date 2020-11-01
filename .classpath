@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
 	<classpathentry kind="src" path="src"/>
+	<classpathentry excluding="src/" kind="src" path=""/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
 	<classpathentry kind="con" path="org.eclipse.jdt.USER_LIBRARY/bouncycastle"/>
-	<classpathentry kind="lib" path="/home/alex/Downloads/jce-jdk13-166.jar"/>
+	<classpathentry kind="lib" path="dependencies/bcprov-jdk15on-167b04.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

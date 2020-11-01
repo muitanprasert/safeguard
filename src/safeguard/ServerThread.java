@@ -192,8 +192,11 @@ public class ServerThread extends Thread {
 			String[] components = msg.split(" ");
 			try {
 				String username = hash(components[1]);
+				System.out.println("hash1");
 				String keyName = shorthash(components[2]);
+				System.out.println("hash2");
 				String key = components[3];
+				System.out.println("comp_missing");
 				return createKey(username, keyName, key);
 			} catch (Exception e) {
 				return "An error occurred. Please try again.";
@@ -286,17 +289,21 @@ public class ServerThread extends Thread {
 		if (keyName.equals("pw")) {
 			return "Key name cannot be \"pw\", please choose a different key name";
 		}
-
+		
 		// check if this username exists
 		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
 			return "No such username. Message may have been corrupted. Try again or reconnect to server";
 		}
-
+		System.out.println("finished files");
+		System.out.println(keyName);
 		// create the keyName file with the given key
-		FileWriter fos = new FileWriter(new File(f, keyName));
-		fos.write(key);
-		fos.close();
+		BufferedWriter writer = new BufferedWriter(new FileWriter(new File(f, keyName)));
+		System.out.println("loaded");
+		writer.write(key);
+		System.out.println(key);
+		writer.close();
+		System.out.println("writer closed");
 		return "Successfully created a new key";
 
 	}
@@ -387,8 +394,7 @@ public class ServerThread extends Thread {
 	 * @return encoded string
 	 */
 	private String encode64(byte[] bytes) {
-		Base64.Encoder encoder = Base64.getMimeEncoder();
-		return encoder.encodeToString(bytes);
+		return Base64.getUrlEncoder().encodeToString(bytes);
 	}
 
 	/**
@@ -398,8 +404,7 @@ public class ServerThread extends Thread {
 	 * @return decode bytes
 	 */
 	private byte[] decode64(String str) {
-		Base64.Decoder decoder = Base64.getMimeDecoder();
-		return decoder.decode(str);
+		return Base64.getUrlDecoder().decode(str);
 	}
 
 	/**

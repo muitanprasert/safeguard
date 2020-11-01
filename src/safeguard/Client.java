@@ -416,8 +416,7 @@ public class Client {
 	 * @return encoded string
 	 */
 	private String encode64(byte[] bytes) {
-		Base64.Encoder encoder = Base64.getMimeEncoder();
-		return encoder.encodeToString(bytes);
+		return Base64.getUrlEncoder().encodeToString(bytes);
 	}
 
 	/**
@@ -427,8 +426,7 @@ public class Client {
 	 * @return decode bytes
 	 */
 	private byte[] decode64(String str) {
-		Base64.Decoder decoder = Base64.getMimeDecoder();
-		return decoder.decode(str);
+		return Base64.getUrlDecoder().decode(str);
 	}
 
 	/**
