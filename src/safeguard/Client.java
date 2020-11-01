@@ -10,7 +10,10 @@ import java.io.IOException;
 import java.net.Socket;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.SecureRandom;
+import java.security.Security;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.security.spec.InvalidKeySpecException;
@@ -30,27 +33,32 @@ import password.PasswordStrength;
  *
  */
 public class Client {
+	private static final int KEY_LENGTH_AES = 128;
 
 	// instance variables
-	private int portNumber = 1999;
+	private int portNumber = 2018;
 	private DataOutputStream streamOut;
 	private DataInputStream streamIn;
 	private Scanner console;
 	private Socket serverSocket;
 
+	public Base64.Encoder encoder = Base64.getMimeEncoder();
+	public Base64.Decoder decoder = Base64.getMimeDecoder();
+
+	private byte[] sharedKey;
+
 	// the username that is currently logged in
 	private String session_username;
-	
-	
 
 	/**
 	 * Constructor handles the central control of operations
-	 * @throws Exception 
+	 * 
+	 * @throws Exception
 	 */
 	public Client() throws Exception {
-		
+
 		// IMPORTANT: change to another machine's address when not running locally
-		String serverAddress = "localhost"; //"pom-itb-cs2.campus.pomona.edu"; //
+		String serverAddress = "localhost"; // "pom-itb-cs2.campus.pomona.edu"; //
 
 		try {
 			// connect to the server
@@ -61,19 +69,23 @@ public class Client {
 			streamOut = new DataOutputStream(serverSocket.getOutputStream());
 			streamIn = new DataInputStream(new BufferedInputStream(serverSocket.getInputStream()));
 			console = new Scanner(System.in, "utf-8");
-			
+
 			// verify certificate: server's public key and signature
 			Key pubKeyB = verifyCertificate();
-			
+
 			// key transport protocol
 			Gen gen = new Gen();
-			try{
+			try {
 				gen.generateSigningKey("A");
-			}
-			catch(Exception e) {
+
+				// generate key transfer message
+				streamOut.writeUTF(generateKeyTransferMessage(pubKeyB));
+				streamOut.flush();
+			} catch (Exception e) {
+				closeSockets();
 				System.out.println(e);
+				return;
 			}
-			
 
 			// log-in/register
 			String line = "";
@@ -83,7 +95,7 @@ public class Client {
 				System.out.println("Please choose \"register\" or \"log-in\"?");
 				line = console.nextLine().toLowerCase();
 			}
-			
+
 			if (line.equals("register")) {
 				try {
 					register();
@@ -95,7 +107,7 @@ public class Client {
 					line = "logout";
 				}
 			}
-			
+
 			if (line.equals("log-in")) {
 				try {
 					login();
@@ -132,7 +144,7 @@ public class Client {
 
 			// close all the sockets and console
 			System.out.println("Logging out of the server...");
-			
+
 			System.out.println("Logout successful");
 		} catch (IOException e) {
 			// print error
@@ -187,7 +199,7 @@ public class Client {
 			// prompt for a username
 			System.out.print("Username: ");
 			String username = console.nextLine();
-			while(username.contains(" ")) { // because we use space as delimiter
+			while (username.contains(" ")) { // because we use space as delimiter
 				System.out.print("Username cannot contain space. Please choose another password: ");
 				username = console.nextLine();
 			}
@@ -198,7 +210,7 @@ public class Client {
 			PasswordStrength checker = new PasswordStrength();
 			boolean strong = checker.check_strength(password);
 			while (!strong || password.contains(" ")) {
-				if(!strong)
+				if (!strong)
 					System.out.print("Weak password. Please choose another password: ");
 				else
 					System.out.print("Password cannot contain space. Please choose another password: ");
@@ -221,7 +233,7 @@ public class Client {
 	 */
 	protected void createKey() throws IOException {
 		String response = null;
-		
+
 		// prompt for a key name
 		System.out.print("Key name: ");
 		String keyName = console.nextLine();
@@ -252,7 +264,7 @@ public class Client {
 	 */
 	protected void loadKey() throws IOException {
 		String response = null;
-		
+
 		// prompt for a key name
 		System.out.print("Key name: ");
 		String keyName = console.nextLine();
@@ -266,15 +278,16 @@ public class Client {
 		response = streamIn.readUTF();
 		System.out.println(response);
 	}
-	
+
 	/**
 	 * Verify the server's certificate and return their public key if successful
+	 * 
 	 * @return
 	 * @throws Exception
 	 */
-	protected Key verifyCertificate() throws Exception{
+	protected Key verifyCertificate() throws Exception {
 		boolean verified;
-		
+
 		// get certificate as a message from server
 		try {
 			String cert = streamIn.readUTF();
@@ -285,20 +298,60 @@ public class Client {
 			sign.initVerify(verificationKeyCA);
 			sign.update(publicB);
 			verified = sign.verify(signedPublicB);
-			
+
 			// terminate immediately if the certificate does not verify
-			if(verified) {
+			if (verified) {
 				System.out.println("Certificate verified.");
 				KeyFactory kf = KeyFactory.getInstance("RSA");
 				X509EncodedKeySpec spec = new X509EncodedKeySpec(publicB);
 				return kf.generatePublic(spec);
-			}
-			else
+			} else
 				throw new Exception();
-		} catch(Exception e) {
+		} catch (Exception e) {
 			closeSockets();
 			throw new Exception("Certificate verification failed. Terminating.");
 		}
+	}
+
+	protected String generateKeyTransferMessage(Key pubKeyB) throws Exception {
+		// load the RSA encryption scheme
+		SecureRandom random = new SecureRandom();
+		Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
+		Cipher cipherRSA = Cipher.getInstance("RSA/None/OAEPWithSHA1AndMGF1Padding", "BC");
+
+		// generate the symmetric Key
+		KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+		keyGen.init(KEY_LENGTH_AES); // for example
+		SecretKey secretKey = keyGen.generateKey();
+
+		// save the shared key and concate it with the name of the client
+		sharedKey = secretKey.getEncoded(); // encryption key
+		byte[] messageToEncrypt = concatBytes("A,".getBytes(), sharedKey);
+		System.out.println("Shared key in Base64: " + encoder.encodeToString(sharedKey));
+
+		
+		// encode the client name + shared key with B's public key
+//		Key transferPubKeyB = Gen.getKeyFromFile("B", "pk", "RSA");
+		cipherRSA.init(Cipher.ENCRYPT_MODE, pubKeyB, random);
+		String encryptedMessage = encoder.encodeToString(cipherRSA.doFinal(messageToEncrypt));
+
+		// Add the server name + current time + client name + encrypted key for full
+		// message
+		long currentTime = System.currentTimeMillis();
+		String keyTransportMessage = "Bob|" + Long.toString(currentTime) + "|" + encryptedMessage;
+
+		// get the client's signing key
+		PrivateKey signKeyA = (PrivateKey) Gen.getKeyFromFile("A", "sk", "DSA");
+		
+		// generate the signature for the message with the client's signing key
+		Signature sign = Signature.getInstance("SHA256withDSA");
+		sign.initSign(signKeyA);
+		
+		sign.update(decoder.decode(keyTransportMessage));
+		String signature = encoder.encodeToString(sign.sign());
+		
+		// return the full message plus the signature of the message
+		return keyTransportMessage + "," + signature;
 	}
 
 	/**
@@ -332,10 +385,25 @@ public class Client {
 		Base64.Decoder decoder = Base64.getMimeDecoder();
 		return decoder.decode(str);
 	}
-	
+
+	/**
+	 * concat bytes a and b together
+	 * 
+	 * @param a
+	 * @param b
+	 * @return
+	 */
+	private byte[] concatBytes(byte[] a, byte[] b) {
+		byte[] result = new byte[a.length + b.length];
+		System.arraycopy(a, 0, result, 0, a.length);
+		System.arraycopy(b, 0, result, a.length, b.length);
+		return result;
+	}
+
 	/**
 	 * Helper function to close all sockets
-	 * @throws IOException 
+	 * 
+	 * @throws IOException
 	 */
 	private void closeSockets() throws IOException {
 		console.close();

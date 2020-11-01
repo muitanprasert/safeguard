@@ -7,5 +7,6 @@
 		</attributes>
 	</classpathentry>
 	<classpathentry kind="con" path="org.eclipse.jdt.USER_LIBRARY/bouncycastle"/>
+	<classpathentry kind="lib" path="/home/alex/Downloads/jce-jdk13-166.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

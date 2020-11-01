@@ -7,21 +7,29 @@ import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.Key;
+import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.Security;
 import java.security.Signature;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.Scanner;
 
+import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import java.security.Key;
@@ -31,11 +39,16 @@ import java.security.Key;
  *
  */
 public class Server {
-	private int portNumber = 1999;
+	private int portNumber = 2018;
 	private DataOutputStream streamOut;
 	private DataInputStream streamIn;
 	private static final int KEY_LENGTH_AES = 128;
 	private File workingDir;
+
+	private byte[] sharedKey;
+
+	public Base64.Encoder encoder = Base64.getMimeEncoder();
+	public Base64.Decoder decoder = Base64.getMimeDecoder();
 
 	public Server() throws Exception {
 		try {
@@ -50,12 +63,17 @@ public class Server {
 			streamOut = new DataOutputStream(clientSocket.getOutputStream());
 
 			sendMessage(getCertificate());
-			
-			// key transport protocol
-			
-			
-						
 			boolean finished = false;
+
+			// get the key transfer message from the client
+			finished = !parseKeyTransferMessage(streamIn.readUTF());
+			System.out.println("Received encrypted shared key.");
+
+			// hash to get a different key for MAC
+			MessageDigest md = MessageDigest.getInstance("MD5");
+			md.update(sharedKey);
+			byte[] macKey = md.digest();
+
 			workingDir = new File("users");
 
 			// read incoming messages
@@ -83,22 +101,22 @@ public class Server {
 			System.out.println(e);
 		}
 	}
-	
+
 	protected String getCertificate() throws Exception {
 		// generate public/private key
 		Gen gen = new Gen();
 		gen.generateEncrptionKey("B");
 		Key pubKeyB = Gen.getKeyFromFile("B", "pk", "RSA");
 		String publicB = encode64(pubKeyB.getEncoded());
-		
+
 		// sign with CA secret key
 		PrivateKey signKeyCA = (PrivateKey) Gen.getKeyFromFile("CA", "sk", "DSA");
 		Signature sign = Signature.getInstance("SHA256withDSA");
 		sign.initSign(signKeyCA);
 		sign.update(decode64(publicB));
 		String signature = encode64(sign.sign());
-		
-		return publicB+","+signature;
+
+		return publicB + "," + signature;
 	}
 
 	/**
@@ -189,8 +207,7 @@ public class Server {
 	}
 
 	/**
-	 * Create a new user on the file system with the specified username and
-	 * password
+	 * Create a new user on the file system with the specified username and password
 	 * 
 	 * @param username
 	 * @param password
@@ -198,7 +215,7 @@ public class Server {
 	 * @throws IOException
 	 */
 	protected String createUser(String username, String password) throws IOException {
-		
+
 		// check if already exists
 		File f = new File(workingDir, username);
 		if (f.exists() && f.isDirectory()) {
@@ -227,7 +244,7 @@ public class Server {
 	 */
 	protected String createKey(String username, String keyName, String key) throws IOException {
 		System.out.println(username);
-		
+
 		// check that we are not overwriting the password
 		if (keyName.equals("pw")) {
 			return "Key name cannot be \"pw\", please choose a different key name";
@@ -268,6 +285,64 @@ public class Server {
 		}
 	}
 
+	protected boolean parseKeyTransferMessage(String keyTransferMessage) throws Exception {
+		// whether the key transfer message is valid
+		boolean valid_message = true;
+
+		// split the message into signed and unsigned parts
+		String[] unsigned_signed = keyTransferMessage.split(",");
+		String unsigned = unsigned_signed[0];
+		String signed = unsigned_signed[1];
+		byte[] signature = decoder.decode(signed);
+
+		// verify the digital signature the message
+		PublicKey verificationKeyA = (PublicKey) Gen.getKeyFromFile("A", "pk", "DSA");
+		Signature sign = Signature.getInstance("SHA256withDSA");
+		sign.initVerify(verificationKeyA);
+		sign.update(decoder.decode(unsigned));
+		boolean verified = sign.verify(signature);
+
+		// split the verified unsigned parts into three components
+		String encryptedMessage = unsigned.substring(unsigned.length() - 352, unsigned.length());
+		int firstSplit = unsigned.indexOf('|');
+		String name = unsigned.substring(0, firstSplit);
+		String time = unsigned.substring(firstSplit + 1, unsigned.indexOf('|', firstSplit + 1));
+
+		// decrypt the message
+		Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
+		PrivateKey privKeyB = (PrivateKey) Gen.getKeyFromFile("B", "sk", "RSA");
+		Cipher cipher = Cipher.getInstance("RSA/None/OAEPWithSHA1AndMGF1Padding", "BC");
+		cipher.init(Cipher.DECRYPT_MODE, privKeyB);
+		byte[] plainText = cipher.doFinal(decoder.decode(encryptedMessage));
+		String decrypted = encoder.encodeToString(plainText);
+
+		long currentTime = System.currentTimeMillis();
+
+		// check the name is correct
+		if (!name.equals("Bob")) {
+			System.out.println("Message sent to the wrong server");
+			valid_message = false;
+		} else if (currentTime - Long.parseLong(time) > 120000) {
+			System.out.println("Message sent too long ago");
+			valid_message = false;
+		} else if (!verified) {
+			System.out.println("Invalid signature");
+			valid_message = false;
+		}
+		System.out.println("Digital signature, name, and time validated.");
+
+		// split decrypted message into identity and key
+		String identity = new String(decoder.decode(decrypted.substring(0, 8)), "UTF-8");
+		identity = identity.substring(0, identity.length() - 1);
+		String key = decrypted.substring(8);
+		System.out.println("Estalished a session with " + identity);
+		System.out.println("With shared key: " + key);
+
+		sharedKey = decoder.decode(key);
+
+		return valid_message;
+	}
+
 	/**
 	 * Helper encoder from bytes to Base64 string
 	 * 
@@ -278,7 +353,7 @@ public class Server {
 		Base64.Encoder encoder = Base64.getMimeEncoder();
 		return encoder.encodeToString(bytes);
 	}
-	
+
 	/**
 	 * Decode Base64 string to byte[]
 	 * 
@@ -289,9 +364,10 @@ public class Server {
 		Base64.Decoder decoder = Base64.getMimeDecoder();
 		return decoder.decode(str);
 	}
-	
+
 	/**
 	 * Helper function to hash with SHA-256
+	 * 
 	 * @param str
 	 * @return
 	 * @throws NoSuchAlgorithmException
@@ -302,9 +378,10 @@ public class Server {
 		byte[] macKey = md.digest();
 		return encode64(macKey);
 	}
-	
+
 	/**
 	 * Helper function to hash MD5
+	 * 
 	 * @param str
 	 * @return
 	 * @throws NoSuchAlgorithmException
