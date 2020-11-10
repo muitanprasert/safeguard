@@ -44,6 +44,7 @@ import java.security.Key;
  *
  */
 public class Server {
+	@SuppressWarnings("resource")
 	public static void main(String args[]) {
 		final int PORT_NUMBER = 2018;
 
@@ -53,20 +54,21 @@ public class Server {
 		try {
 			serverSocket = new ServerSocket(PORT_NUMBER);
 			System.out.println("Server started at port " + PORT_NUMBER);
-		} catch (IOException e) {
-			// print error if the server fails to create itself
-			System.out.println("Error in creating the server");
-			System.out.println(e);
-		}
-		while (true) {
-			try {
-				socket = serverSocket.accept();
-				System.out.println("Client connected");
-			} catch (IOException e) {
-				System.out.println(e);
+			
+			while (true) {
+				try {
+					socket = serverSocket.accept();
+					System.out.println("Client connected");
+				} catch (IOException e) {
+					System.out.println(e);
+				}
+				// new thread for the client
+				new ServerThread(socket).start();
 			}
-			// new thread for the client
-			new ServerThread(socket).start();
+		} catch (IOException e) {
+			// print error if the server fails
+			System.out.println("Server fails");
+			System.out.println(e);
 		}
 	}
 }

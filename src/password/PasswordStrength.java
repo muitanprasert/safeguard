@@ -65,7 +65,7 @@ public class PasswordStrength {
 	 * @throws IOException
 	 */
 	private boolean check_wordlist(String pw, String filename) throws IOException {
-		BufferedReader br = new BufferedReader(new InputStreamReader(this.getClass().getResourceAsStream(filename)));
+		BufferedReader br = new BufferedReader(new InputStreamReader(this.getClass().getResourceAsStream(filename), "UTF-8"));
 		ArrayList<String> sb = new ArrayList<String>();
 		String line;
 		while ((line = br.readLine()) != null)
@@ -85,6 +85,6 @@ public class PasswordStrength {
 	public static void main(String[] args) throws IOException {
 		if (args.length < 1)
 			System.out.println("Incorrect number of arguments");
-		PasswordStrength checker = new PasswordStrength(args[0]);
+		new PasswordStrength(args[0]);
 	}
 }

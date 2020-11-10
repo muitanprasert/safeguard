@@ -8,6 +8,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -16,8 +17,6 @@ import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.Signature;
-import java.security.SignatureException;
-import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.Scanner;
@@ -25,11 +24,9 @@ import java.util.Scanner;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.Mac;
-import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-
 import java.security.Key;
 
 import password.PasswordStrength;
@@ -40,17 +37,15 @@ import password.PasswordStrength;
  */
 public class Client {
 	private static final int KEY_LENGTH_AES = 128;
-	private final int PORT_NUMBER = 2018;
+	private static final int PORT_NUMBER = 2018;
+	private static final int MAC_LENGTH = 44;
 
 	// instance variables
 	private DataOutputStream streamOut;
 	private DataInputStream streamIn;
 	private Scanner console;
 	private Socket serverSocket;
-
-	public Base64.Encoder encoder = Base64.getMimeEncoder();
-	public Base64.Decoder decoder = Base64.getMimeDecoder();
-
+	
 	private byte[] sharedKey;
 	private byte[] macKey;
 
@@ -176,7 +171,7 @@ public class Client {
 	 * @throws Exception
 	 * @throws NoSuchAlgorithmException
 	 */
-	protected boolean login() throws NoSuchAlgorithmException, Exception {
+	protected boolean login() throws Exception {
 		String response = null;
 		// do {
 		// prompt for a username
@@ -196,7 +191,7 @@ public class Client {
 
 		// send a request to create an account
 		sendMessage("LOGIN " + username + " " + password);
-		response = streamIn.readUTF();
+		response = readResponse();
 		System.out.println(response);
 
 		// on a successful login, set the session username for later key accesses
@@ -221,7 +216,7 @@ public class Client {
 		System.out.print("Username: ");
 		String username = console.nextLine();
 		while (username.contains(" ")) { // because we use space as delimiter
-			System.out.print("Username cannot contain space. Please choose another password: ");
+			System.out.print("Username cannot contain space. Please choose another username: ");
 			username = console.nextLine();
 		}
 
@@ -241,7 +236,7 @@ public class Client {
 
 		// send a request to create an account
 		sendMessage("REGISTER " + username + " " + password);
-		response = streamIn.readUTF();
+		response = readResponse();
 		System.out.println(response);
 		// } while (!response.equals("Successfully created an account."));
 	}
@@ -267,15 +262,48 @@ public class Client {
 		// prompt for a key
 		System.out.print("Key: ");
 		String key = console.nextLine();
-		while (key.contains(" ")) {
+		/**while (key.contains(" ")) {
 			System.out.print("Key cannot contain space. Please choose another key: ");
 			key = console.nextLine();
-		}
+		}**/
 
 		// send a request to create an account
 		sendMessage("NEWKEY " + session_username + " " + keyName + " " + key);
-		response = streamIn.readUTF();
+		response = readResponse();
 		System.out.println(response);
+	}
+	
+	/**
+	 * Read and decrypt message
+	 * @return
+	 * @throws Exception 
+	 */
+	protected String readResponse() throws Exception {
+		String msg = streamIn.readUTF();
+
+		// verify that the message is correct with the MAC tag
+		String tag = msg.substring(0, MAC_LENGTH);
+		msg = msg.substring(MAC_LENGTH);
+
+		Mac mac = Mac.getInstance("HmacSHA256");
+		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
+
+		String correctTag = encode64((mac.doFinal(msg.getBytes(StandardCharsets.UTF_8))));
+		if (!tag.equals(correctTag)) {
+			throw new Exception("MAC tag didn't match. Closing connection...");
+		}
+
+		// decrypt the message
+		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes(StandardCharsets.UTF_8));
+		SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
+
+		Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+		cipherAES.init(Cipher.DECRYPT_MODE, skeySpec, iv);
+
+		msg = new String(cipherAES.doFinal(decode64(msg)), StandardCharsets.UTF_8);
+		msg = msg.substring(8, msg.length()); // remove the message number from the message
+		
+		return msg;
 	}
 
 	/**
@@ -292,13 +320,13 @@ public class Client {
 		System.out.print("Key name: ");
 		String keyName = console.nextLine();
 		while (keyName.contains(" ")) {
-			System.out.print("Key name cannot contain space. Please choose another key name: ");
+			System.out.print("Not a valid key name. Please enter another key name: ");
 			keyName = console.nextLine();
 		}
 
 		// send a request to create an account
 		sendMessage("LOADKEY " + session_username + " " + keyName);
-		response = streamIn.readUTF();
+		response = readResponse();
 		System.out.println(response);
 	}
 
@@ -332,11 +360,12 @@ public class Client {
 				throw new Exception();
 		} catch (Exception e) {
 			closeSockets();
-			throw new Exception("Certificate verification failed. Terminating.");
+			throw e;//new Exception("Certificate verification failed. Terminating.");
 		}
 	}
 
 	protected String generateKeyTransferMessage(Key pubKeyB) throws Exception {
+		
 		// load the RSA encryption scheme
 		SecureRandom random = new SecureRandom();
 		Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
@@ -347,15 +376,14 @@ public class Client {
 		keyGen.init(KEY_LENGTH_AES); // for example
 		SecretKey secretKey = keyGen.generateKey();
 
-		// save the shared key and concate it with the name of the client
+		// save the shared key and concatenate it with the name of the client
 		sharedKey = secretKey.getEncoded(); // encryption key
-		byte[] messageToEncrypt = concatBytes("Alice,".getBytes(), sharedKey);
-		System.out.println("Shared key in Base64: " + encoder.encodeToString(sharedKey));
+		byte[] messageToEncrypt = concatBytes("Alice,".getBytes("UTF-8"), sharedKey);
+		System.out.println("Shared key in Base64: " + encode64(sharedKey));
 
 		// encode the client name + shared key with B's public key
-//		Key transferPubKeyB = Gen.getKeyFromFile("B", "pk", "RSA");
 		cipherRSA.init(Cipher.ENCRYPT_MODE, pubKeyB, random);
-		String encryptedMessage = encoder.encodeToString(cipherRSA.doFinal(messageToEncrypt));
+		String encryptedMessage = encode64(cipherRSA.doFinal(messageToEncrypt));
 
 		// Add the server name + current time + client name + encrypted key for full
 		// message
@@ -369,8 +397,8 @@ public class Client {
 		Signature sign = Signature.getInstance("SHA256withDSA");
 		sign.initSign(signKeyA);
 
-		sign.update(decoder.decode(keyTransportMessage));
-		String signature = encoder.encodeToString(sign.sign());
+		sign.update(decode64(keyTransportMessage));
+		String signature = encode64(sign.sign());
 
 		// return the full message plus the signature of the message
 		return keyTransportMessage + "," + signature;
@@ -379,11 +407,9 @@ public class Client {
 	/**
 	 * Sends a message to the data output stream
 	 * 
-	 * @throws IOException
 	 * @throws Exception
-	 * @throws NoSuchAlgorithmException
 	 */
-	protected void sendMessage(String msg) throws IOException, NoSuchAlgorithmException, Exception {
+	protected void sendMessage(String msg) throws Exception {
 		// tag message number in front
 		msg = pad8(msgNumber) + msg;
 
@@ -394,11 +420,11 @@ public class Client {
 		cipherAES.init(Cipher.ENCRYPT_MODE, skeySpec, iv);
 
 		// getBytes okay because line is human-readable text
-		msg = encoder.encodeToString(cipherAES.doFinal(msg.getBytes()));
+		msg = encode64(cipherAES.doFinal(msg.getBytes("UTF-8")));
 
 		Mac mac = Mac.getInstance("HmacSHA256");
 		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
-		String tag = encoder.encodeToString(mac.doFinal(msg.getBytes()));
+		String tag = encode64(mac.doFinal(msg.getBytes("UTF-8")));
 		msg = tag + msg;
 
 		// increment message number
@@ -416,7 +442,8 @@ public class Client {
 	 * @return encoded string
 	 */
 	private String encode64(byte[] bytes) {
-		return Base64.getUrlEncoder().encodeToString(bytes);
+		String str = Base64.getMimeEncoder().encodeToString(bytes);
+		return str.replace("/", "_");
 	}
 
 	/**
@@ -426,7 +453,8 @@ public class Client {
 	 * @return decode bytes
 	 */
 	private byte[] decode64(String str) {
-		return Base64.getUrlDecoder().decode(str);
+		str = str.replace("_", "/");
+		return Base64.getMimeDecoder().decode(str);
 	}
 
 	/**

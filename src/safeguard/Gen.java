@@ -119,10 +119,10 @@ public class Gen {
 
 		KeyFactory kf = KeyFactory.getInstance(type);
 
-		if (postfix == "sk") {
+		if (postfix.equals("sk")) {
 			PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
 			return kf.generatePrivate(spec);
-		} else if (postfix == "pk") {
+		} else if (postfix.equals("pk")) {
 			X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
 			return kf.generatePublic(spec);
 		}
@@ -141,6 +141,7 @@ public class Gen {
 		// set-up directory if it doesn't exist
 		File dir = new File("users");
 		if (!dir.exists())
-			dir.mkdirs();
+			if(!dir.mkdirs())
+				System.out.println("Problem occurred while setting up directory");
 	}
 }
