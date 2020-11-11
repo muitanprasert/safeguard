@@ -154,8 +154,8 @@ public class Client {
 			}
 
 			// close all the sockets and console
+			sendMessage("LOGOUT");
 			System.out.println("Logging out of the server...");
-
 			System.out.println("Logout successful");
 		} catch (IOException e) {
 			// print error

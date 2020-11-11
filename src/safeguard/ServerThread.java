@@ -19,10 +19,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.Security;
 import java.security.Signature;
 import java.security.spec.KeySpec;
 import java.util.Base64;
+import java.util.Random;
 import java.util.Scanner;
 
 import javax.crypto.Cipher;
@@ -87,9 +89,12 @@ public class ServerThread extends Thread {
 					String msg = readResponse();
 
 					System.out.println("Received msg: " + msg);
-					String response = processMessage(msg);
-					sendMessage(response);
-					finished = msg.equals("logout");
+					if(msg.equals("LOGOUT"))
+						finished = true;
+					else{
+						String response = processMessage(msg);
+						sendMessage(response);
+					}
 				} catch (Exception e) {
 					// disconnect if there is an error reading the input
 					System.out.println(e);
@@ -169,7 +174,7 @@ public class ServerThread extends Thread {
 			String[] components = msg.split(" ");
 			try {
 				String username = hash(components[1]);
-				String password = hash(components[2]);
+				String password = components[2]; // raw password
 				return createUser(username, password);
 			} catch (Exception e) {
 				return "Failed to create an account. Please try again.";
@@ -228,13 +233,13 @@ public class ServerThread extends Thread {
 		File passwordFile = new File(workingDir, username + "/pw");
 		//System.out.println(passwordFile);
 		Scanner passwordReader = new Scanner(passwordFile);
+		String savedSalt = passwordReader.nextLine();
 		String savedPassword = passwordReader.nextLine();
 		passwordReader.close();
-		//System.out.println(savedPassword);
-		//System.out.println(password);
+		//System.out.println(savedPassword +" | "+savedSalt+" | "+hash(savedSalt+password));
 
 		// log-in if passwords match
-		if (savedPassword.equals(hash(password))) {
+		if (savedPassword.equals(hash(savedSalt+password))) {
 			setEncryptionKey(password);
 			return "Successfully logged in";
 		}
@@ -248,8 +253,9 @@ public class ServerThread extends Thread {
 	 * @param password
 	 * @return
 	 * @throws IOException
+	 * @throws NoSuchAlgorithmException 
 	 */
-	protected String createUser(String username, String password) throws IOException {
+	protected String createUser(String username, String password) throws IOException, NoSuchAlgorithmException {
 
 		// check if already exists
 		File f = new File(workingDir, username);
@@ -259,9 +265,14 @@ public class ServerThread extends Thread {
 
 		// create the account with the given password
 		if (f.mkdir()) {
-			File pwf = new File(workingDir, username + "/pw");
+			// add salt to the password
+			String salt = encode64(getSalt());
+			password = hash(salt + password);
 			
+			// write salt and salted and hashed password
+			File pwf = new File(workingDir, username + "/pw");
 			BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(pwf), StandardCharsets.UTF_8));
+			writer.write(salt+"\n");
 			writer.write(password); // hashed password
 			writer.close();
 			return "Successfully created an account.";
@@ -308,16 +319,16 @@ public class ServerThread extends Thread {
 			return "No such key. Message may have been corrupted. Try again or reconnect to server";
 		}
 
-		// load the password on the file and check if it matches the input password
 		try {
+			
+			// retrieve the file containing the key
 			File keyFile = new File(workingDir, username + "/" + keyName);
 			Scanner keyReader = new Scanner(keyFile);
 			String encryptedKey = keyReader.nextLine();
 			keyReader.close();
-			System.out.println("Retrieved: "+encryptedKey);
-			String savedKey = decryptData(encryptedKey);
 			
-			// log-in if passwords match
+			// send the decrypted key's content back to client
+			String savedKey = decryptData(encryptedKey);
 			return "Success! The requested key is: " + savedKey;
 		} catch (FileNotFoundException e) {
 			return "No such file, try running \"create key \" first";
@@ -479,6 +490,18 @@ public class ServerThread extends Thread {
 		return encode64(macKey);
 	}
 	
+	/**
+	   * Creates a random salt
+	   *
+	   * @return 16-byte salt
+	   */
+	  public static byte[] getSalt() {
+	    byte[] salt = new byte[16];
+	    Random random = new SecureRandom();
+	    random.nextBytes(salt);
+	    return salt;
+	  }
+	  
 	/**
 	 * Convert a password into an encryption key
 	 * @param password
