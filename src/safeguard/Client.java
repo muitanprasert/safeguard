@@ -130,9 +130,10 @@ public class Client {
 			}
 
 			// communicate with user and server while authenticated
+			// all errors from the server should've been caught; other errors result in termination
 			while (!line.equals("logout")) {
-				System.out.println("Please choose \"create key\" or \"load key\" or \"logout\"?");
-				line = console.nextLine();
+				System.out.println("Please choose \"create key\", \"list keys\", \"load key\", \"delete key\", or \"logout\"?");
+				line = console.nextLine().toLowerCase();
 				if (line.equals("create key")) {
 					try {
 						createKey();
@@ -142,12 +143,21 @@ public class Client {
 						line = "logout";
 					}
 				}
-				if (line.equals("load key")) {
+				else if (line.equals("load key")) {
 					try {
 						loadKey();
 					} catch (Exception e) {
 						System.out.println(e.getMessage());
-						System.out.println("Creating key failed. Terminating connection.");
+						System.out.println("Loading key failed. Terminating connection.");
+						line = "logout";
+					}
+				}
+				else if (line.equals("delete key")) {
+					try {
+						deleteKey();
+					} catch (Exception e) {
+						System.out.println(e.getMessage());
+						System.out.println("Deleting key failed. Terminating connection.");
 						line = "logout";
 					}
 				}
@@ -163,6 +173,10 @@ public class Client {
 			System.out.println(e);
 		}
 	}
+	
+	/*------------------------------------------
+	 * CLIENT-SERVER OPERATION HELPER FUNCTIONS
+	 ------------------------------------------*/
 
 	/**
 	 * Prompt the user to enter their username and password to gain access to their
@@ -262,16 +276,63 @@ public class Client {
 		// prompt for a key
 		System.out.print("Key: ");
 		String key = console.nextLine();
-		/**while (key.contains(" ")) {
-			System.out.print("Key cannot contain space. Please choose another key: ");
-			key = console.nextLine();
-		}**/
 
 		// send a request to create an account
 		sendMessage("NEWKEY " + session_username + " " + keyName + " " + key);
 		response = readResponse();
 		System.out.println(response);
 	}
+	
+	/**
+	 * Prompts the user for a key name, and gets the key associated with this name
+	 * on the file system for this user
+	 * 
+	 * @throws Exception
+	 * @throws NoSuchAlgorithmException
+	 */
+	protected void loadKey() throws NoSuchAlgorithmException, Exception {
+		String response = null;
+
+		// prompt for a key name
+		System.out.print("Key name: ");
+		String keyName = console.nextLine();
+		while (keyName.contains(" ")) {
+			System.out.print("Not a valid key name. Please enter another key name: ");
+			keyName = console.nextLine();
+		}
+
+		// send a request to create an account
+		sendMessage("LOADKEY " + session_username + " " + keyName);
+		response = readResponse();
+		System.out.println(response);
+	}
+	
+	/**
+	 * Prompts the user for a key name and deletes it
+	 * 
+	 * @throws Exception
+	 * @throws NoSuchAlgorithmException
+	 */
+	protected void deleteKey() throws Exception {
+		String response = null;
+
+		// prompt for a key name
+		System.out.print("Key name: ");
+		String keyName = console.nextLine();
+		while (keyName.contains(" ")) {
+			System.out.print("Not a valid key name. Please enter another key name: ");
+			keyName = console.nextLine();
+		}
+
+		// send a request to create an account
+		sendMessage("DELETEKEY " + session_username + " " + keyName);
+		response = readResponse();
+		System.out.println(response);
+	}
+	
+	/*------------------------------------------
+	 * IO HELPER FUNCTIONS
+	 ------------------------------------------*/
 	
 	/**
 	 * Read and decrypt message
@@ -307,28 +368,51 @@ public class Client {
 	}
 
 	/**
-	 * Prompts the user for a key name, and gets the key associated with this name
-	 * on the file system for this user
+	 * Sends a message to the data output stream
 	 * 
 	 * @throws Exception
-	 * @throws NoSuchAlgorithmException
 	 */
-	protected void loadKey() throws NoSuchAlgorithmException, Exception {
-		String response = null;
+	protected void sendMessage(String msg) throws Exception {
+		// tag message number in front
+		msg = pad8(msgNumber) + msg;
 
-		// prompt for a key name
-		System.out.print("Key name: ");
-		String keyName = console.nextLine();
-		while (keyName.contains(" ")) {
-			System.out.print("Not a valid key name. Please enter another key name: ");
-			keyName = console.nextLine();
-		}
+		// encrypt message with the shared key
+		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes("UTF-8"));
+		SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
+		Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+		cipherAES.init(Cipher.ENCRYPT_MODE, skeySpec, iv);
 
-		// send a request to create an account
-		sendMessage("LOADKEY " + session_username + " " + keyName);
-		response = readResponse();
-		System.out.println(response);
+		// getBytes okay because line is human-readable text
+		msg = encode64(cipherAES.doFinal(msg.getBytes("UTF-8")));
+
+		Mac mac = Mac.getInstance("HmacSHA256");
+		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
+		String tag = encode64(mac.doFinal(msg.getBytes("UTF-8")));
+		msg = tag + msg;
+
+		// increment message number
+		msgNumber++;
+
+		// send encrypted message to the server
+		streamOut.writeUTF(msg);
+		streamOut.flush();
 	}
+	
+	/**
+	 * Helper function to close all sockets
+	 * 
+	 * @throws IOException
+	 */
+	private void closeSockets() throws IOException {
+		console.close();
+		streamOut.close();
+		streamIn.close();
+		serverSocket.close();
+	}
+	
+	/*------------------------------------------
+	 * CRYPTOGRAPHIC HELPER FUNCTIONs
+	 ------------------------------------------*/
 
 	/**
 	 * Verify the server's certificate and return their public key if successful
@@ -403,40 +487,9 @@ public class Client {
 		// return the full message plus the signature of the message
 		return keyTransportMessage + "," + signature;
 	}
-
+	
 	/**
-	 * Sends a message to the data output stream
-	 * 
-	 * @throws Exception
-	 */
-	protected void sendMessage(String msg) throws Exception {
-		// tag message number in front
-		msg = pad8(msgNumber) + msg;
-
-		// encrypt message with the shared key
-		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes("UTF-8"));
-		SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
-		Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
-		cipherAES.init(Cipher.ENCRYPT_MODE, skeySpec, iv);
-
-		// getBytes okay because line is human-readable text
-		msg = encode64(cipherAES.doFinal(msg.getBytes("UTF-8")));
-
-		Mac mac = Mac.getInstance("HmacSHA256");
-		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
-		String tag = encode64(mac.doFinal(msg.getBytes("UTF-8")));
-		msg = tag + msg;
-
-		// increment message number
-		msgNumber++;
-
-		// send encrypted message to the server
-		streamOut.writeUTF(msg);
-		streamOut.flush();
-	}
-
-	/**
-	 * Helper encoder from bytes to Base64 string
+	 * Encoder from bytes to Base64 string (avoids slash)
 	 * 
 	 * @param bytes
 	 * @return encoded string
@@ -449,7 +502,7 @@ public class Client {
 	/**
 	 * Decode Base64 string to byte[]
 	 * 
-	 * @param str
+	 * @param base64 string (possibly with _ but no /)
 	 * @return decode bytes
 	 */
 	private byte[] decode64(String str) {
@@ -469,18 +522,6 @@ public class Client {
 		System.arraycopy(a, 0, result, 0, a.length);
 		System.arraycopy(b, 0, result, a.length, b.length);
 		return result;
-	}
-
-	/**
-	 * Helper function to close all sockets
-	 * 
-	 * @throws IOException
-	 */
-	private void closeSockets() throws IOException {
-		console.close();
-		streamOut.close();
-		streamIn.close();
-		serverSocket.close();
 	}
 
 	/**

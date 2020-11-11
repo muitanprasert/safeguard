@@ -24,6 +24,7 @@ import java.security.Security;
 import java.security.Signature;
 import java.security.spec.KeySpec;
 import java.util.Base64;
+import java.util.Properties;
 import java.util.Random;
 import java.util.Scanner;
 
@@ -34,6 +35,14 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
+
+import javax.mail.Message;
+import javax.mail.MessagingException;
+import javax.mail.PasswordAuthentication;
+import javax.mail.Session;
+import javax.mail.Transport;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeMessage;
 
 /**
  * @author Mui Tanprasert & Alex Franklin
@@ -113,58 +122,13 @@ public class ServerThread extends Thread {
 
 	}
 
-	protected String getCertificate() throws Exception {
-		
-		// generate public/private key
-		Gen gen = new Gen();
-		gen.generateEncrptionKey("B");
-		Key pubKeyB = Gen.getKeyFromFile("B", "pk", "RSA");
-		String publicB = encode64(pubKeyB.getEncoded());
-
-		// sign with CA secret key
-		PrivateKey signKeyCA = (PrivateKey) Gen.getKeyFromFile("CA", "sk", "DSA");
-		Signature sign = Signature.getInstance("SHA256withDSA");
-		sign.initSign(signKeyCA);
-		sign.update(decode64(publicB));
-		String signature = encode64(sign.sign());
-
-		return publicB + "," + signature;
-	}
-
-	/**
-	 * Sends a message to the data output stream
-	 * 
-	 * @throws Exception
-	 */
-	protected void sendMessage(String msg) throws Exception {
-		// tag message number in front
-		msg = pad8(msgNumber) + msg;
-
-		// encrypt message with the shared key
-		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes("UTF-8"));
-		SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
-		Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
-		cipherAES.init(Cipher.ENCRYPT_MODE, skeySpec, iv);
-
-		// getBytes okay because line is human-readable text
-		msg = encode64(cipherAES.doFinal(msg.getBytes("UTF-8")));
-
-		Mac mac = Mac.getInstance("HmacSHA256");
-		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
-		String tag = encode64(mac.doFinal(msg.getBytes("UTF-8")));
-		msg = tag + msg;
-
-		// increment message number
-		msgNumber++;
-
-		// send encrypted message to the server
-		streamOut.writeUTF(msg);
-		streamOut.flush();
-	}
-
+	/*------------------------------------------
+	 * SERVER-CLIENT OPERATION HELPER FUNCTIONs
+	 ------------------------------------------*/
+	
 	/**
 	 * Process an incoming message by detecting the type of request and calling
-	 * corresponding function Messaage type: REGISTER, LOGIN, NEWKEY, LOADKEY, etc.
+	 * corresponding function Message type: REGISTER, LOGIN, NEWKEY, LOADKEY, etc.
 	 * 
 	 * @param msg
 	 * @return the server's response
@@ -197,18 +161,27 @@ public class ServerThread extends Thread {
 				String keyName = msg.substring(firstIndex, secondIndex-1);
 				String key = msg.substring(secondIndex);
 				//System.out.println(username + " | " + key);
-				return createKey(hash(username), shorthash(keyName), key);
+				return createKey(hash(username), keyName, key);
 			} catch (Exception e) {
 				return "An error occurred. Please try again.";
 			}
 		} else if (msg.startsWith("LOADKEY")) {
 			String[] components = msg.split(" ");
 			try {
-				String username = hash(components[1]);
-				String keyName = shorthash(components[2]);
-				return loadKey(username, keyName);
+				String username = components[1];
+				String keyName = components[2];
+				return loadKey(hash(username), keyName);
 			} catch (Exception e) {
 				return e.getMessage() + "Failed to load key. Please try again.";
+			}
+		} else if (msg.startsWith("DELETEKEY")) {
+			String[] components = msg.split(" ");
+			try {
+				String username = components[1];
+				String keyName = components[2];
+				return deleteKey(hash(username), keyName);
+			} catch (Exception e) {
+				return "An error occurred during hashing. Please try again.";
 			}
 		}
 		return "Incorrect message format. Please try again.";
@@ -231,7 +204,6 @@ public class ServerThread extends Thread {
 
 		// load the password on the file and check if it matches the input password
 		File passwordFile = new File(workingDir, username + "/pw");
-		//System.out.println(passwordFile);
 		Scanner passwordReader = new Scanner(passwordFile);
 		String savedSalt = passwordReader.nextLine();
 		String savedPassword = passwordReader.nextLine();
@@ -316,11 +288,10 @@ public class ServerThread extends Thread {
 		// check if this username exists
 		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
-			return "No such key. Message may have been corrupted. Try again or reconnect to server";
+			return "Directory not found. Message may have been corrupted. Try again or reconnect to server";
 		}
 
 		try {
-			
 			// retrieve the file containing the key
 			File keyFile = new File(workingDir, username + "/" + keyName);
 			Scanner keyReader = new Scanner(keyFile);
@@ -331,12 +302,135 @@ public class ServerThread extends Thread {
 			String savedKey = decryptData(encryptedKey);
 			return "Success! The requested key is: " + savedKey;
 		} catch (FileNotFoundException e) {
-			return "No such file, try running \"create key \" first";
+			return "No such key, try running \"create key\" first";
 		} catch (Exception e) {
 			return "A problem occurred while retrieving the key's content";
 		}
 	}
+	
+	protected String deleteKey(String username, String keyName) {
+		// check if this username exists
+		File f = new File(workingDir, username);
+		if (!f.exists() || !f.isDirectory()) {
+			return "Directory not found. Message may have been corrupted. Try again or reconnect to server";
+		}
+		
+		// retrieve the file containing the key
+		File keyFile = new File(workingDir, username + "/" + keyName);
+		if (keyFile.exists()) {
+			if(keyFile.delete())
+				return "Key successfully deleted";
+			else
+				return "Failed to delete file for unknown reasons";
+		}
+		else
+			return "Key not found. Please check your spelling (case-sensitive) or run \"list keys\" first.";
+	}
+	
+	/*------------------------------------------
+	 * IO HELPER FUNCTIONs
+	 ------------------------------------------*/
 
+	protected static void sendEmail(String to) {
+		// Sender's email ID needs to be mentioned
+		String from = "181s.safeguard@gmail.com";
+		final String username = from;
+		final String password = "alex&mui";
+
+		Properties prop = new Properties();
+		prop.put("mail.smtp.auth", "true");
+        prop.put("mail.smtp.host", "smtp.gmail.com");
+        prop.put("mail.smtp.port", "587");
+        prop.put("mail.smtp.starttls.enable", "true");
+		
+		// Get the Session object.
+		Session session = Session.getInstance(prop, new javax.mail.Authenticator() {
+			protected PasswordAuthentication getPasswordAuthentication() {
+				return new PasswordAuthentication(username, password);
+				}
+			});
+		
+		try {
+			Message message = new MimeMessage(session);
+			message.setFrom(new InternetAddress(from));
+			message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
+			message.setSubject("Your OTP for safeguard");
+			message.setText("Hello,\n\nThis is your OTP: "+"otp"+". It will only be valid for three minutes.\n\nSafeguard Team");
+			Transport.send(message);
+			System.out.println("Email successfully sent to "+to);
+		} catch (MessagingException e) {
+			  throw new RuntimeException(e);
+		}
+	}
+	
+	/**
+	 * Sends a message to the data output stream
+	 * 
+	 * @throws Exception
+	 */
+	protected void sendMessage(String msg) throws Exception {
+		// tag message number in front
+		msg = pad8(msgNumber) + msg;
+
+		// encrypt message with the shared key
+		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes("UTF-8"));
+		SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
+		Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+		cipherAES.init(Cipher.ENCRYPT_MODE, skeySpec, iv);
+
+		// getBytes okay because line is human-readable text
+		msg = encode64(cipherAES.doFinal(msg.getBytes("UTF-8")));
+
+		Mac mac = Mac.getInstance("HmacSHA256");
+		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
+		String tag = encode64(mac.doFinal(msg.getBytes("UTF-8")));
+		msg = tag + msg;
+
+		// increment message number
+		msgNumber++;
+
+		// send encrypted message to the server
+		streamOut.writeUTF(msg);
+		streamOut.flush();
+	}
+	
+	/**
+	 * Read and decrypt message
+	 * @return
+	 * @throws Exception 
+	 */
+	protected String readResponse() throws Exception {
+		String msg = streamIn.readUTF();
+
+		// verify that the message is correct with the MAC tag
+		String tag = msg.substring(0, MAC_LENGTH);
+		msg = msg.substring(MAC_LENGTH);
+
+		Mac mac = Mac.getInstance("HmacSHA256");
+		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
+
+		String correctTag = encode64((mac.doFinal(msg.getBytes(StandardCharsets.UTF_8))));
+		if (!tag.equals(correctTag)) {
+			throw new Exception("MAC tag didn't match. Closing connection...");
+		}
+
+		// decrypt the message
+		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes(StandardCharsets.UTF_8));
+		SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
+
+		Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+		cipherAES.init(Cipher.DECRYPT_MODE, skeySpec, iv);
+
+		msg = new String(cipherAES.doFinal(decode64(msg)), StandardCharsets.UTF_8);
+		msg = msg.substring(8, msg.length()); // remove the message number from the message
+		
+		return msg;
+	}
+	
+	/*------------------------------------------
+	 * CRYPTOGRAPHIC HELPER FUNCTIONs
+	 ------------------------------------------*/
+	
 	protected boolean parseKeyTransferMessage(String keyTransferMessage) throws Exception {
 		// whether the key transfer message is valid
 		boolean valid_message = true;
@@ -394,42 +488,29 @@ public class ServerThread extends Thread {
 
 		return valid_message;
 	}
-
+	
 	/**
-	 * Read and decrypt message
-	 * @return
-	 * @throws Exception 
+	 * Returns the certificate (public key + signature) as a string
 	 */
-	protected String readResponse() throws Exception {
-		String msg = streamIn.readUTF();
+	protected String getCertificate() throws Exception {
+		// generate public/private key
+		Gen gen = new Gen();
+		gen.generateEncrptionKey("B");
+		Key pubKeyB = Gen.getKeyFromFile("B", "pk", "RSA");
+		String publicB = encode64(pubKeyB.getEncoded());
 
-		// verify that the message is correct with the MAC tag
-		String tag = msg.substring(0, MAC_LENGTH);
-		msg = msg.substring(MAC_LENGTH);
+		// sign with CA secret key
+		PrivateKey signKeyCA = (PrivateKey) Gen.getKeyFromFile("CA", "sk", "DSA");
+		Signature sign = Signature.getInstance("SHA256withDSA");
+		sign.initSign(signKeyCA);
+		sign.update(decode64(publicB));
+		String signature = encode64(sign.sign());
 
-		Mac mac = Mac.getInstance("HmacSHA256");
-		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
-
-		String correctTag = encode64((mac.doFinal(msg.getBytes(StandardCharsets.UTF_8))));
-		if (!tag.equals(correctTag)) {
-			throw new Exception("MAC tag didn't match. Closing connection...");
-		}
-
-		// decrypt the message
-		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes(StandardCharsets.UTF_8));
-		SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
-
-		Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
-		cipherAES.init(Cipher.DECRYPT_MODE, skeySpec, iv);
-
-		msg = new String(cipherAES.doFinal(decode64(msg)), StandardCharsets.UTF_8);
-		msg = msg.substring(8, msg.length()); // remove the message number from the message
-		
-		return msg;
+		return publicB + "," + signature;
 	}
 	
 	/**
-	 * Helper encoder from bytes to Base64 string
+	 * Encoder from bytes to Base64 string (avoids slash)
 	 * 
 	 * @param bytes
 	 * @return encoded string
@@ -442,7 +523,7 @@ public class ServerThread extends Thread {
 	/**
 	 * Decode Base64 string to byte[]
 	 * 
-	 * @param str
+	 * @param base64 string (possibly with _ but no /)
 	 * @return decode bytes
 	 */
 	private byte[] decode64(String str) {
@@ -474,20 +555,6 @@ public class ServerThread extends Thread {
 		String strN = Integer.toString(n);
 		String padding = "00000000".substring(0, 8 - strN.length());
 		return padding + strN;
-	}
-
-	/**
-	 * Helper function to hash MD5
-	 * 
-	 * @param str
-	 * @return
-	 * @throws NoSuchAlgorithmException
-	 */
-	private String shorthash(String str) throws NoSuchAlgorithmException {
-		MessageDigest md = MessageDigest.getInstance("MD5");
-		md.update(str.getBytes(StandardCharsets.UTF_8));
-		byte[] macKey = md.digest();
-		return encode64(macKey);
 	}
 	
 	/**
@@ -532,7 +599,7 @@ public class ServerThread extends Thread {
     
 	public static void main(String[] args) throws Exception {
 		try {
-			new Server();
+			sendEmail("t_abc555@hotmail.com"); // test email sending
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
