@@ -27,6 +27,11 @@ import java.util.Base64;
 import java.util.Properties;
 import java.util.Random;
 import java.util.Scanner;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
@@ -53,7 +58,7 @@ public class ServerThread extends Thread {
 
 	private static final int KEY_LENGTH_AES = 128;
 	private static final int MAC_LENGTH = 44;
-	private static int portNumber = 2018;
+	private static final int OTP_LIMIT = 3; // minutes
 	
 	private DataOutputStream streamOut;
 	private DataInputStream streamIn;
@@ -182,6 +187,18 @@ public class ServerThread extends Thread {
 				return deleteKey(hash(username), keyName);
 			} catch (Exception e) {
 				return "An error occurred during hashing. Please try again.";
+			}
+		}
+		
+		// TODO: work in progress; not meant to actually be used
+		else if(msg.equals("VERIFY")) {
+			try {
+				if(verifyOTP())
+					return "Successfully verified with the OTP!";
+				return "Failed: incorrect OTP or timed out";
+			} catch (Exception e) {
+				e.printStackTrace();
+				return "Failed: incorrect OTP or timed out";
 			}
 		}
 		return "Incorrect message format. Please try again.";
@@ -327,11 +344,31 @@ public class ServerThread extends Thread {
 			return "Key not found. Please check your spelling (case-sensitive) or run \"list keys\" first.";
 	}
 	
+	protected boolean verifyOTP() throws Exception {
+		String otp = generateOTP();
+		sendEmail("t_abc555@hotmail.com", otp); // replace with user's email
+		try {
+			ScheduledExecutorService executor = Executors.newScheduledThreadPool(2);
+		    final Future<Boolean> handler = executor.submit(new Callable<Boolean>() {
+		        public Boolean call() throws Exception {
+		        	String input = readResponse();
+		        	if(input.equals(otp))
+		        		return true;
+		        	return false;
+		        }
+		    });
+		    executor.schedule((Runnable) () -> handler.cancel(true), OTP_LIMIT, TimeUnit.MINUTES);
+		    return handler.get();
+		} catch (Exception e) {
+			return false;
+		}
+	}
+	
 	/*------------------------------------------
-	 * IO HELPER FUNCTIONs
+	 * IO HELPER FUNCTIONS
 	 ------------------------------------------*/
 
-	protected static void sendEmail(String to) {
+	protected void sendEmail(String to, String otp) {
 		// Sender's email ID needs to be mentioned
 		String from = "181s.safeguard@gmail.com";
 		final String username = from;
@@ -355,12 +392,22 @@ public class ServerThread extends Thread {
 			message.setFrom(new InternetAddress(from));
 			message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
 			message.setSubject("Your OTP for safeguard");
-			message.setText("Hello,\n\nThis is your OTP: "+"otp"+". It will only be valid for three minutes.\n\nSafeguard Team");
+			message.setText("Hello,\n\nThis is your OTP: "+otp+"\nIt will only be valid for three minutes.\n\nSafeguard Team");
 			Transport.send(message);
 			System.out.println("Email successfully sent to "+to);
 		} catch (MessagingException e) {
 			  throw new RuntimeException(e);
 		}
+	}
+	
+	/**
+	 * Returns a random 8-character OTP
+	 */
+	public static String generateOTP() {
+	    SecureRandom random = new SecureRandom();
+	    byte[] bytes = new byte[8];
+	    random.nextBytes(bytes);
+	    return encode64(bytes);
 	}
 	
 	/**
@@ -515,7 +562,7 @@ public class ServerThread extends Thread {
 	 * @param bytes
 	 * @return encoded string
 	 */
-	private String encode64(byte[] bytes) {
+	private static String encode64(byte[] bytes) {
 		String str = Base64.getMimeEncoder().encodeToString(bytes);
 		return str.replace("/", "_");
 	}
@@ -526,7 +573,7 @@ public class ServerThread extends Thread {
 	 * @param base64 string (possibly with _ but no /)
 	 * @return decode bytes
 	 */
-	private byte[] decode64(String str) {
+	private static byte[] decode64(String str) {
 		str = str.replace("_", "/");
 		return Base64.getMimeDecoder().decode(str);
 	}
@@ -597,11 +644,7 @@ public class ServerThread extends Thread {
         return new String(utf8, "UTF-8");
     }
     
-	public static void main(String[] args) throws Exception {
-		try {
-			sendEmail("t_abc555@hotmail.com"); // test email sending
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+	public static void main(String[] args) {
+		
 	}
 }

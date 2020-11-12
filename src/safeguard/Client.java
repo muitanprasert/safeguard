@@ -161,6 +161,15 @@ public class Client {
 						line = "logout";
 					}
 				}
+				
+				// TODO: work in progress; not meant to actually be used
+				else if (line.equals("verify with otp")) {
+					sendMessage("VERIFY");
+					System.out.println("Enter the OTP sent to your email:" );
+					String in = console.nextLine();
+					sendMessage(in);
+					System.out.println(readResponse());
+				}
 			}
 
 			// close all the sockets and console
