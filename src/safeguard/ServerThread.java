@@ -59,7 +59,8 @@ public class ServerThread extends Thread {
 	private static final int KEY_LENGTH_AES = 128;
 	private static final int MAC_LENGTH = 44;
 	private static final int OTP_LIMIT = 3; // minutes
-	
+	private static final int HASH_ITERATIONS = 100000;
+
 	private DataOutputStream streamOut;
 	private DataInputStream streamIn;
 	private File workingDir;
@@ -71,7 +72,7 @@ public class ServerThread extends Thread {
 	private Cipher dcipher;
 	private IvParameterSpec ivPB = new IvParameterSpec("encryptionIntVec".getBytes(StandardCharsets.UTF_8));
 	private byte[] saltPB = "fixedSaltForEncr".getBytes();
-	
+
 	public ServerThread(Socket clientSocket) {
 		this.clientSocket = clientSocket;
 	}
@@ -92,7 +93,7 @@ public class ServerThread extends Thread {
 			// hash to get a different key for MAC
 			MessageDigest md = MessageDigest.getInstance("MD5");
 			md.update(sharedKey);
-			//System.out.println(sharedKey);
+			// System.out.println(sharedKey);
 			macKey = md.digest();
 
 			workingDir = new File("users");
@@ -103,9 +104,9 @@ public class ServerThread extends Thread {
 					String msg = readResponse();
 
 					System.out.println("Received msg: " + msg);
-					if(msg.equals("LOGOUT"))
+					if (msg.equals("LOGOUT"))
 						finished = true;
-					else{
+					else {
 						String response = processMessage(msg);
 						sendMessage(response);
 					}
@@ -130,7 +131,7 @@ public class ServerThread extends Thread {
 	/*------------------------------------------
 	 * SERVER-CLIENT OPERATION HELPER FUNCTIONs
 	 ------------------------------------------*/
-	
+
 	/**
 	 * Process an incoming message by detecting the type of request and calling
 	 * corresponding function Message type: REGISTER, LOGIN, NEWKEY, LOADKEY, etc.
@@ -158,17 +159,25 @@ public class ServerThread extends Thread {
 				return "Invalid credentials";
 			}
 		} else if (msg.startsWith("NEWKEY")) {
-			int startIndex = msg.indexOf(" ")+1;
-			int firstIndex = msg.indexOf(" ", startIndex)+1;
-			int secondIndex = msg.indexOf(" ", firstIndex)+1;
+			int startIndex = msg.indexOf(" ") + 1;
+			int firstIndex = msg.indexOf(" ", startIndex) + 1;
+			int secondIndex = msg.indexOf(" ", firstIndex) + 1;
 			try {
-				String username = msg.substring(startIndex, firstIndex-1);
-				String keyName = msg.substring(firstIndex, secondIndex-1);
+				String username = msg.substring(startIndex, firstIndex - 1);
+				String keyName = msg.substring(firstIndex, secondIndex - 1);
 				String key = msg.substring(secondIndex);
-				//System.out.println(username + " | " + key);
+				// System.out.println(username + " | " + key);
 				return createKey(hash(username), keyName, key);
 			} catch (Exception e) {
 				return "An error occurred. Please try again.";
+			}
+		} else if (msg.startsWith("LISTKEYS")) {
+			String[] components = msg.split(" ");
+			try {
+				String username = components[1];
+				return listKeys(hash(username));
+			} catch (Exception e) {
+				return e.getMessage() + "Failed to load key. Please try again.";
 			}
 		} else if (msg.startsWith("LOADKEY")) {
 			String[] components = msg.split(" ");
@@ -188,12 +197,22 @@ public class ServerThread extends Thread {
 			} catch (Exception e) {
 				return "An error occurred during hashing. Please try again.";
 			}
-		}
-		
-		// TODO: work in progress; not meant to actually be used
-		else if(msg.equals("VERIFY")) {
+		} else if (msg.startsWith("CHANGEPASSWORD")) {
+			String[] components = msg.split(" ");
 			try {
-				if(verifyOTP())
+				String username = components[1];
+				String newPassword = components[2];
+				String oldPassword = components[3];
+				return changePassword(hash(username), newPassword, oldPassword);
+			} catch (Exception e) {
+				return "An error occurred during hashing. Please try again.";
+			}
+		}
+
+		// TODO: work in progress; not meant to actually be used
+		else if (msg.equals("VERIFY")) {
+			try {
+				if (verifyOTP())
 					return "Successfully verified with the OTP!";
 				return "Failed: incorrect OTP or timed out";
 			} catch (Exception e) {
@@ -210,7 +229,7 @@ public class ServerThread extends Thread {
 	 * @param username
 	 * @param password
 	 * @return
-	 * @throws Exception 
+	 * @throws Exception
 	 */
 	protected String login(String username, String password) throws Exception {
 		// check if already exists
@@ -225,11 +244,18 @@ public class ServerThread extends Thread {
 		String savedSalt = passwordReader.nextLine();
 		String savedPassword = passwordReader.nextLine();
 		passwordReader.close();
-		//System.out.println(savedPassword +" | "+savedSalt+" | "+hash(savedSalt+password));
+		// System.out.println(savedPassword +" | "+savedSalt+" |
+		// "+hash(savedSalt+password));
+
+		String inputPassword = hash(savedSalt + password);
+
+		for (int i = 0; i < HASH_ITERATIONS; i++) {
+			inputPassword = hash(inputPassword);
+		}
 
 		// log-in if passwords match
-		if (savedPassword.equals(hash(savedSalt+password))) {
-			setEncryptionKey(password);
+		if (savedPassword.equals(inputPassword)) {
+			setEncryptionKey(inputPassword);
 			return "Successfully logged in";
 		}
 		throw new IOException("Invalid credentials");
@@ -242,7 +268,7 @@ public class ServerThread extends Thread {
 	 * @param password
 	 * @return
 	 * @throws IOException
-	 * @throws NoSuchAlgorithmException 
+	 * @throws NoSuchAlgorithmException
 	 */
 	protected String createUser(String username, String password) throws IOException, NoSuchAlgorithmException {
 
@@ -257,11 +283,16 @@ public class ServerThread extends Thread {
 			// add salt to the password
 			String salt = encode64(getSalt());
 			password = hash(salt + password);
-			
+
+			for (int i = 0; i < HASH_ITERATIONS; i++) {
+				password = hash(password);
+			}
+
 			// write salt and salted and hashed password
 			File pwf = new File(workingDir, username + "/pw");
-			BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(pwf), StandardCharsets.UTF_8));
-			writer.write(salt+"\n");
+			BufferedWriter writer = new BufferedWriter(
+					new OutputStreamWriter(new FileOutputStream(pwf), StandardCharsets.UTF_8));
+			writer.write(salt + "\n");
 			writer.write(password); // hashed password
 			writer.close();
 			return "Successfully created an account.";
@@ -276,31 +307,70 @@ public class ServerThread extends Thread {
 	 * @param keyName
 	 * @param key
 	 * @return
-	 * @throws Exception 
+	 * @throws Exception
 	 */
 	protected String createKey(String username, String keyName, String key) throws Exception {
-		System.out.println("Creating key for "+username+" (hashed)");
+		System.out.println("Creating key for " + username + " (hashed)");
 
 		// check that we are not overwriting the password
 		if (keyName.equals("pw")) {
 			return "Key name cannot be \"pw\", please choose a different key name";
 		}
-		
+
+		// check that we are not creating a directory
+		if (keyName.contains("/") || keyName.contains("..")) {
+			return "Key name cannot be a directory, please choose a different key name";
+		}
+
 		// check if this username exists
 		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
 			return "Cannot find your key. Message may have been corrupted. Try again or reconnect to server";
 		}
-		
+
 		// create the keyName file with the given key
 		File pwf = new File(f, keyName);
-		BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(pwf), StandardCharsets.UTF_8));
+		BufferedWriter writer = new BufferedWriter(
+				new OutputStreamWriter(new FileOutputStream(pwf), StandardCharsets.UTF_8));
 		writer.write(encryptData(key));
 		System.out.println(key);
 		writer.close();
 		return "Successfully created a new key";
 	}
 
+	protected String listKeys(String username) throws Exception {
+		// check if this username exists
+		File f = new File(workingDir, username);
+		if (!f.exists() || !f.isDirectory()) {
+			return "Directory not found. Message may have been corrupted. Try again or reconnect to server";
+		}
+		try {
+			// final list of all key names
+			String allKeys = "";
+
+			// retrieve the file containing all the keys for this user
+			File keyFile = new File(workingDir, username);
+			String[] keyNames = keyFile.list();
+
+			for (String keyName : keyNames) {
+				if (!keyName.equals("pw")) {
+					allKeys += keyName + ", ";
+				}
+			}
+			return "Key name options are: " + allKeys;
+		} catch (Exception e) {
+			return "A problem occurred while retrieving the key names";
+		}
+	}
+
+	/**
+	 * loads a key from the system
+	 * 
+	 * @param username
+	 * @param keyName
+	 * @return
+	 * @throws Exception
+	 */
 	protected String loadKey(String username, String keyName) throws Exception {
 		// check if this username exists
 		File f = new File(workingDir, username);
@@ -314,7 +384,7 @@ public class ServerThread extends Thread {
 			Scanner keyReader = new Scanner(keyFile);
 			String encryptedKey = keyReader.nextLine();
 			keyReader.close();
-			
+
 			// send the decrypted key's content back to client
 			String savedKey = decryptData(encryptedKey);
 			return "Success! The requested key is: " + savedKey;
@@ -324,46 +394,116 @@ public class ServerThread extends Thread {
 			return "A problem occurred while retrieving the key's content";
 		}
 	}
-	
+
 	protected String deleteKey(String username, String keyName) {
 		// check if this username exists
 		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
 			return "Directory not found. Message may have been corrupted. Try again or reconnect to server";
 		}
-		
+
 		// retrieve the file containing the key
 		File keyFile = new File(workingDir, username + "/" + keyName);
 		if (keyFile.exists()) {
-			if(keyFile.delete())
+			if (keyFile.delete())
 				return "Key successfully deleted";
 			else
 				return "Failed to delete file for unknown reasons";
-		}
-		else
+		} else
 			return "Key not found. Please check your spelling (case-sensitive) or run \"list keys\" first.";
 	}
-	
+
+	protected String changePassword(String username, String newPassword, String oldPassword) {
+		// check if this username exists
+		File f = new File(workingDir, username);
+		if (!f.exists() || !f.isDirectory()) {
+			return "Directory not found. Message may have been corrupted. Try again or reconnect to server";
+		}
+		try {
+
+			// verify the old password is correct
+			File passwordFile = new File(workingDir, username + "/pw");
+			Scanner passwordReader = new Scanner(passwordFile);
+			String savedSalt = passwordReader.nextLine();
+			String savedPassword = passwordReader.nextLine();
+			passwordReader.close();
+
+			oldPassword = hash(savedSalt + oldPassword);
+			for (int i = 0; i < HASH_ITERATIONS; i++) {
+				oldPassword = hash(oldPassword);
+			}
+			// quit if passwords don't match
+			if (!savedPassword.equals(oldPassword)) {
+				return "Incorrect password, no changes made";
+			}
+
+			// salt and hash the new password
+			String salt = encode64(getSalt());
+			newPassword = hash(salt + newPassword);
+
+			for (int i = 0; i < HASH_ITERATIONS; i++) {
+				newPassword = hash(newPassword);
+			}
+
+			// retrieve the file containing all the keys for this user
+			File userDirectory = new File(workingDir, username);
+			String[] keyNames = userDirectory.list(); // list of all keys to be re-encrypted
+
+			// get the new encryption key from the new password
+			SecretKey newEncryptionKey = keyFromPassword(newPassword);
+
+			for (String keyName : keyNames) {
+				if (!keyName.equals("pw")) {
+					File keyFile = new File(workingDir, username + "/" + keyName);
+					Scanner keyReader = new Scanner(keyFile);
+					String encryptedKey = keyReader.nextLine();
+					keyReader.close();
+					String savedKey = decryptData(encryptedKey);
+
+					BufferedWriter writer = new BufferedWriter(
+							new OutputStreamWriter(new FileOutputStream(keyFile), StandardCharsets.UTF_8));
+					writer.write(""); // delete the old encrypted key
+					writer.write(encryptData(savedKey, newEncryptionKey)); // replace with new encrypted key
+					writer.close();
+				}
+			}
+
+			// change password file and password for the current session
+			// write salt and salted and hashed password
+			File pwf = new File(workingDir, username + "/pw");
+			BufferedWriter writer = new BufferedWriter(
+					new OutputStreamWriter(new FileOutputStream(pwf), StandardCharsets.UTF_8));
+			writer.write(salt + "\n");
+			writer.write(newPassword); // hashed password
+			writer.close();
+			setEncryptionKey(newPassword);
+
+			return "Successfully changed password";
+		} catch (Exception e) {
+			return "A problem occurred while changing password";
+		}
+	}
+
 	protected boolean verifyOTP() throws Exception {
 		String otp = generateOTP();
 		sendEmail("t_abc555@hotmail.com", otp); // replace with user's email
 		try {
 			ScheduledExecutorService executor = Executors.newScheduledThreadPool(2);
-		    final Future<Boolean> handler = executor.submit(new Callable<Boolean>() {
-		        public Boolean call() throws Exception {
-		        	String input = readResponse();
-		        	if(input.equals(otp))
-		        		return true;
-		        	return false;
-		        }
-		    });
-		    executor.schedule((Runnable) () -> handler.cancel(true), OTP_LIMIT, TimeUnit.MINUTES);
-		    return handler.get();
+			final Future<Boolean> handler = executor.submit(new Callable<Boolean>() {
+				public Boolean call() throws Exception {
+					String input = readResponse();
+					if (input.equals(otp))
+						return true;
+					return false;
+				}
+			});
+			executor.schedule((Runnable) () -> handler.cancel(true), OTP_LIMIT, TimeUnit.MINUTES);
+			return handler.get();
 		} catch (Exception e) {
 			return false;
 		}
 	}
-	
+
 	/*------------------------------------------
 	 * IO HELPER FUNCTIONS
 	 ------------------------------------------*/
@@ -376,40 +516,41 @@ public class ServerThread extends Thread {
 
 		Properties prop = new Properties();
 		prop.put("mail.smtp.auth", "true");
-        prop.put("mail.smtp.host", "smtp.gmail.com");
-        prop.put("mail.smtp.port", "587");
-        prop.put("mail.smtp.starttls.enable", "true");
-		
+		prop.put("mail.smtp.host", "smtp.gmail.com");
+		prop.put("mail.smtp.port", "587");
+		prop.put("mail.smtp.starttls.enable", "true");
+
 		// Get the Session object.
 		Session session = Session.getInstance(prop, new javax.mail.Authenticator() {
 			protected PasswordAuthentication getPasswordAuthentication() {
 				return new PasswordAuthentication(username, password);
-				}
-			});
-		
+			}
+		});
+
 		try {
 			Message message = new MimeMessage(session);
 			message.setFrom(new InternetAddress(from));
 			message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
 			message.setSubject("Your OTP for safeguard");
-			message.setText("Hello,\n\nThis is your OTP: "+otp+"\nIt will only be valid for three minutes.\n\nSafeguard Team");
+			message.setText("Hello,\n\nThis is your OTP: " + otp
+					+ "\nIt will only be valid for three minutes.\n\nSafeguard Team");
 			Transport.send(message);
-			System.out.println("Email successfully sent to "+to);
+			System.out.println("Email successfully sent to " + to);
 		} catch (MessagingException e) {
-			  throw new RuntimeException(e);
+			throw new RuntimeException(e);
 		}
 	}
-	
+
 	/**
 	 * Returns a random 8-character OTP
 	 */
 	public static String generateOTP() {
-	    SecureRandom random = new SecureRandom();
-	    byte[] bytes = new byte[8];
-	    random.nextBytes(bytes);
-	    return encode64(bytes);
+		SecureRandom random = new SecureRandom();
+		byte[] bytes = new byte[8];
+		random.nextBytes(bytes);
+		return encode64(bytes);
 	}
-	
+
 	/**
 	 * Sends a message to the data output stream
 	 * 
@@ -440,11 +581,12 @@ public class ServerThread extends Thread {
 		streamOut.writeUTF(msg);
 		streamOut.flush();
 	}
-	
+
 	/**
 	 * Read and decrypt message
+	 * 
 	 * @return
-	 * @throws Exception 
+	 * @throws Exception
 	 */
 	protected String readResponse() throws Exception {
 		String msg = streamIn.readUTF();
@@ -470,14 +612,14 @@ public class ServerThread extends Thread {
 
 		msg = new String(cipherAES.doFinal(decode64(msg)), StandardCharsets.UTF_8);
 		msg = msg.substring(8, msg.length()); // remove the message number from the message
-		
+
 		return msg;
 	}
-	
+
 	/*------------------------------------------
 	 * CRYPTOGRAPHIC HELPER FUNCTIONs
 	 ------------------------------------------*/
-	
+
 	protected boolean parseKeyTransferMessage(String keyTransferMessage) throws Exception {
 		// whether the key transfer message is valid
 		boolean valid_message = true;
@@ -535,7 +677,7 @@ public class ServerThread extends Thread {
 
 		return valid_message;
 	}
-	
+
 	/**
 	 * Returns the certificate (public key + signature) as a string
 	 */
@@ -555,7 +697,7 @@ public class ServerThread extends Thread {
 
 		return publicB + "," + signature;
 	}
-	
+
 	/**
 	 * Encoder from bytes to Base64 string (avoids slash)
 	 * 
@@ -591,7 +733,7 @@ public class ServerThread extends Thread {
 		byte[] macKey = md.digest();
 		return encode64(macKey);
 	}
-	
+
 	/**
 	 * pads the integer n with 8 zeros
 	 * 
@@ -603,48 +745,62 @@ public class ServerThread extends Thread {
 		String padding = "00000000".substring(0, 8 - strN.length());
 		return padding + strN;
 	}
-	
+
 	/**
-	   * Creates a random salt
-	   *
-	   * @return 16-byte salt
-	   */
-	  public static byte[] getSalt() {
-	    byte[] salt = new byte[16];
-	    Random random = new SecureRandom();
-	    random.nextBytes(salt);
-	    return salt;
-	  }
-	  
+	 * Creates a random salt
+	 *
+	 * @return 16-byte salt
+	 */
+	public static byte[] getSalt() {
+		byte[] salt = new byte[16];
+		Random random = new SecureRandom();
+		random.nextBytes(salt);
+		return salt;
+	}
+
 	/**
 	 * Convert a password into an encryption key
+	 * 
 	 * @param password
 	 * @return
 	 * @throws Exception
 	 */
 	private void setEncryptionKey(String password) throws Exception {
 		SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
-        KeySpec spec = new PBEKeySpec(password.toCharArray(), saltPB, 1024, 256);
-        SecretKey tmp = factory.generateSecret(spec);
-        dcipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        encryptionKey = new SecretKeySpec(tmp.getEncoded(), "AES");
-        //System.out.println("Encryption key: "+encryptionKey.getEncoded());
-    }
-    
-	public String encryptData(String data) throws Exception {
-        dcipher.init(Cipher.ENCRYPT_MODE, encryptionKey, ivPB);
-        byte[] utf8EncryptedData = dcipher.doFinal(data.getBytes("UTF-8"));
-        return encode64(utf8EncryptedData);
-    }
+		KeySpec spec = new PBEKeySpec(password.toCharArray(), saltPB, 1024, 256);
+		SecretKey tmp = factory.generateSecret(spec);
+		dcipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+		encryptionKey = new SecretKeySpec(tmp.getEncoded(), "AES");
+	}
 
-    public String decryptData(String encrypted) throws Exception {
-        dcipher.init(Cipher.DECRYPT_MODE, encryptionKey, ivPB);
-        byte[] decryptedData = decode64(encrypted);
-        byte[] utf8 = dcipher.doFinal(decryptedData);
-        return new String(utf8, "UTF-8");
-    }
-    
+	private SecretKey keyFromPassword(String password) throws Exception {
+		SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
+		KeySpec spec = new PBEKeySpec(password.toCharArray(), saltPB, 1024, 256);
+		SecretKey tmp = factory.generateSecret(spec);
+		dcipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+		return new SecretKeySpec(tmp.getEncoded(), "AES");
+	}
+
+	public String encryptData(String data) throws Exception {
+		dcipher.init(Cipher.ENCRYPT_MODE, encryptionKey, ivPB);
+		byte[] utf8EncryptedData = dcipher.doFinal(data.getBytes("UTF-8"));
+		return encode64(utf8EncryptedData);
+	}
+
+	public String encryptData(String data, SecretKey tempKey) throws Exception {
+		dcipher.init(Cipher.ENCRYPT_MODE, tempKey, ivPB);
+		byte[] utf8EncryptedData = dcipher.doFinal(data.getBytes("UTF-8"));
+		return encode64(utf8EncryptedData);
+	}
+
+	public String decryptData(String encrypted) throws Exception {
+		dcipher.init(Cipher.DECRYPT_MODE, encryptionKey, ivPB);
+		byte[] decryptedData = decode64(encrypted);
+		byte[] utf8 = dcipher.doFinal(decryptedData);
+		return new String(utf8, "UTF-8");
+	}
+
 	public static void main(String[] args) {
-		
+
 	}
 }
