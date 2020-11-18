@@ -45,7 +45,7 @@ public class Client {
 	private DataInputStream streamIn;
 	private Scanner console;
 	private Socket serverSocket;
-	
+
 	private byte[] sharedKey;
 	private byte[] macKey;
 
@@ -130,9 +130,11 @@ public class Client {
 			}
 
 			// communicate with user and server while authenticated
-			// all errors from the server should've been caught; other errors result in termination
+			// all errors from the server should've been caught; other errors result in
+			// termination
 			while (!line.equals("logout")) {
-				System.out.println("Please choose \"create key\", \"list keys\", \"load key\", \"delete key\", or \"logout\"?");
+				System.out.println(
+						"Please choose \"create key\", \"list keys\", \"load key\", \"delete key\", \"change password\" or \"logout\"?");
 				line = console.nextLine().toLowerCase();
 				if (line.equals("create key")) {
 					try {
@@ -142,8 +144,15 @@ public class Client {
 						System.out.println("Creating key failed. Terminating connection.");
 						line = "logout";
 					}
-				}
-				else if (line.equals("load key")) {
+				} else if (line.equals("list keys")) {
+					try {
+						listKeys();
+					} catch (Exception e) {
+						System.out.println(e.getMessage());
+						System.out.println("Listing keys failed. Terminating connection");
+						line = "logout";
+					}
+				} else if (line.equals("load key")) {
 					try {
 						loadKey();
 					} catch (Exception e) {
@@ -151,8 +160,7 @@ public class Client {
 						System.out.println("Loading key failed. Terminating connection.");
 						line = "logout";
 					}
-				}
-				else if (line.equals("delete key")) {
+				} else if (line.equals("delete key")) {
 					try {
 						deleteKey();
 					} catch (Exception e) {
@@ -160,12 +168,19 @@ public class Client {
 						System.out.println("Deleting key failed. Terminating connection.");
 						line = "logout";
 					}
+				} else if (line.equals("change password")) {
+					try {
+						changePassword();
+					} catch (Exception e) {
+						System.out.println(e.getMessage());
+						System.out.println("Changing password failed. Terminating connection.");
+						line = "logout";
+					}
 				}
-				
 				// TODO: work in progress; not meant to actually be used
 				else if (line.equals("verify with otp")) {
 					sendMessage("VERIFY");
-					System.out.println("Enter the OTP sent to your email:" );
+					System.out.println("Enter the OTP sent to your email:");
 					String in = console.nextLine();
 					sendMessage(in);
 					System.out.println(readResponse());
@@ -182,7 +197,7 @@ public class Client {
 			System.out.println(e);
 		}
 	}
-	
+
 	/*------------------------------------------
 	 * CLIENT-SERVER OPERATION HELPER FUNCTIONS
 	 ------------------------------------------*/
@@ -291,7 +306,16 @@ public class Client {
 		response = readResponse();
 		System.out.println(response);
 	}
-	
+
+	protected void listKeys() throws Exception {
+		String response = null;
+
+		// send a request to create an account
+		sendMessage("LISTKEYS " + session_username);
+		response = readResponse();
+		System.out.println(response);
+	}
+
 	/**
 	 * Prompts the user for a key name, and gets the key associated with this name
 	 * on the file system for this user
@@ -315,7 +339,7 @@ public class Client {
 		response = readResponse();
 		System.out.println(response);
 	}
-	
+
 	/**
 	 * Prompts the user for a key name and deletes it
 	 * 
@@ -338,15 +362,43 @@ public class Client {
 		response = readResponse();
 		System.out.println(response);
 	}
-	
+
+	protected void changePassword() throws Exception {
+		String response = null;
+
+		// prompt for a new password
+		System.out.print("Old password: ");
+		String oldPassword = console.nextLine();
+
+		// prompt for a new password
+		System.out.print("New password: ");
+		String newPassword = console.nextLine();
+		PasswordStrength checker = new PasswordStrength();
+		boolean strong = checker.check_strength(newPassword);
+		while (!strong || newPassword.contains(" ")) {
+			if (!strong)
+				System.out.print("Weak password. Please choose another password: ");
+			else
+				System.out.print("Password cannot contain space. Please choose another password: ");
+			newPassword = console.nextLine();
+			strong = checker.check_strength(newPassword);
+		}
+
+		// send a request to create an account
+		sendMessage("CHANGEPASSWORD " + session_username + " " + newPassword + " " + oldPassword);
+		response = readResponse();
+		System.out.println(response);
+	}
+
 	/*------------------------------------------
 	 * IO HELPER FUNCTIONS
 	 ------------------------------------------*/
-	
+
 	/**
 	 * Read and decrypt message
+	 * 
 	 * @return
-	 * @throws Exception 
+	 * @throws Exception
 	 */
 	protected String readResponse() throws Exception {
 		String msg = streamIn.readUTF();
@@ -372,7 +424,7 @@ public class Client {
 
 		msg = new String(cipherAES.doFinal(decode64(msg)), StandardCharsets.UTF_8);
 		msg = msg.substring(8, msg.length()); // remove the message number from the message
-		
+
 		return msg;
 	}
 
@@ -406,7 +458,7 @@ public class Client {
 		streamOut.writeUTF(msg);
 		streamOut.flush();
 	}
-	
+
 	/**
 	 * Helper function to close all sockets
 	 * 
@@ -418,7 +470,7 @@ public class Client {
 		streamIn.close();
 		serverSocket.close();
 	}
-	
+
 	/*------------------------------------------
 	 * CRYPTOGRAPHIC HELPER FUNCTIONs
 	 ------------------------------------------*/
@@ -453,12 +505,12 @@ public class Client {
 				throw new Exception();
 		} catch (Exception e) {
 			closeSockets();
-			throw e;//new Exception("Certificate verification failed. Terminating.");
+			throw e;// new Exception("Certificate verification failed. Terminating.");
 		}
 	}
 
 	protected String generateKeyTransferMessage(Key pubKeyB) throws Exception {
-		
+
 		// load the RSA encryption scheme
 		SecureRandom random = new SecureRandom();
 		Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
@@ -496,7 +548,7 @@ public class Client {
 		// return the full message plus the signature of the message
 		return keyTransportMessage + "," + signature;
 	}
-	
+
 	/**
 	 * Encoder from bytes to Base64 string (avoids slash)
 	 * 
