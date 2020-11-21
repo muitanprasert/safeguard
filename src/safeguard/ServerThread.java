@@ -145,7 +145,8 @@ public class ServerThread extends Thread {
 			try {
 				String username = hash(components[1]);
 				String password = components[2]; // raw password
-				return createUser(username, password);
+				String email = hash(components[3]);
+				return createUser(username, password, email);
 			} catch (Exception e) {
 				return "Failed to create an account. Please try again.";
 			}
@@ -154,7 +155,21 @@ public class ServerThread extends Thread {
 			try {
 				String username = hash(components[1]);
 				String password = components[2]; // raw password
-				return login(username, password);
+				String response = login(username, password);
+				if(response.equals("Successfully logged in") && requiresOTP(username)) {
+					sendMessage("Requires email verification");
+					
+					// confirm email
+					msg = readResponse();
+					System.out.println(msg);
+					if(!msg.startsWith("TOEMAIL")) return "Message corrupted";
+					String email = msg.split(" ")[1];
+					if(!verifyEmail(username, email)) return "Invalid or incorrect email";
+					if(verifyOTP(email))
+						return "Successfully logged in";
+					return "Email verification failed";
+				}
+				return response;
 			} catch (Exception e) {
 				return "Invalid credentials";
 			}
@@ -207,19 +222,30 @@ public class ServerThread extends Thread {
 			} catch (Exception e) {
 				return "An error occurred during hashing. Please try again.";
 			}
-		}
-
-		// TODO: work in progress; not meant to actually be used
-		else if (msg.equals("VERIFY")) {
+		} /*else if (msg.startsWith("RECOVER")) {
+			String[] components = msg.split(" ");
 			try {
-				if (verifyOTP())
-					return "Successfully verified with the OTP!";
-				return "Failed: incorrect OTP or timed out";
+				String username = hash(components[1]);
+				String email = components[2];
+				String status = verifyUser(username, email);
+				sendMessage(status);
+				if(status.equals("verified")) {
+					msg = readResponse();
+					components = msg.split(" ");
+					if(!components[0].equals("NEWPASSWORD"))
+						return "Message corrupted.";
+					String newPassword = components[1];
+					setPassword(username, newPassword, email);
+					return "Successfully reset password.";
+				}
+				else
+					throw new Exception();
 			} catch (Exception e) {
 				e.printStackTrace();
-				return "Failed: incorrect OTP or timed out";
+				return "Account recovery failed. Please try again.";
 			}
-		}
+		}*/
+
 		return "Incorrect message format. Please try again.";
 	}
 
@@ -232,7 +258,8 @@ public class ServerThread extends Thread {
 	 * @throws Exception
 	 */
 	protected String login(String username, String password) throws Exception {
-		// check if already exists
+		
+		// check if exists
 		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
 			return "Invalid credentials";
@@ -244,8 +271,6 @@ public class ServerThread extends Thread {
 		String savedSalt = passwordReader.nextLine();
 		String savedPassword = passwordReader.nextLine();
 		passwordReader.close();
-		// System.out.println(savedPassword +" | "+savedSalt+" |
-		// "+hash(savedSalt+password));
 
 		String inputPassword = hash(savedSalt + password);
 
@@ -270,7 +295,7 @@ public class ServerThread extends Thread {
 	 * @throws IOException
 	 * @throws NoSuchAlgorithmException
 	 */
-	protected String createUser(String username, String password) throws IOException, NoSuchAlgorithmException {
+	protected String createUser(String username, String password, String email) throws IOException, NoSuchAlgorithmException {
 
 		// check if already exists
 		File f = new File(workingDir, username);
@@ -293,7 +318,8 @@ public class ServerThread extends Thread {
 			BufferedWriter writer = new BufferedWriter(
 					new OutputStreamWriter(new FileOutputStream(pwf), StandardCharsets.UTF_8));
 			writer.write(salt + "\n");
-			writer.write(password); // hashed password
+			writer.write(password + "\n"); // hashed password
+			writer.write(email); // hashed email
 			writer.close();
 			return "Successfully created an account.";
 		}
@@ -426,6 +452,7 @@ public class ServerThread extends Thread {
 			Scanner passwordReader = new Scanner(passwordFile);
 			String savedSalt = passwordReader.nextLine();
 			String savedPassword = passwordReader.nextLine();
+			String savedEmail = passwordReader.nextLine();
 			passwordReader.close();
 
 			oldPassword = hash(savedSalt + oldPassword);
@@ -436,62 +463,79 @@ public class ServerThread extends Thread {
 			if (!savedPassword.equals(oldPassword)) {
 				return "Incorrect password, no changes made";
 			}
-
-			// salt and hash the new password
-			String salt = encode64(getSalt());
-			newPassword = hash(salt + newPassword);
-
-			for (int i = 0; i < HASH_ITERATIONS; i++) {
-				newPassword = hash(newPassword);
-			}
-
-			// retrieve the file containing all the keys for this user
-			File userDirectory = new File(workingDir, username);
-			String[] keyNames = userDirectory.list(); // list of all keys to be re-encrypted
-
-			// get the new encryption key from the new password
-			SecretKey newEncryptionKey = keyFromPassword(newPassword);
-
-			for (String keyName : keyNames) {
-				if (!keyName.equals("pw")) {
-					File keyFile = new File(workingDir, username + "/" + keyName);
-					Scanner keyReader = new Scanner(keyFile);
-					String encryptedKey = keyReader.nextLine();
-					keyReader.close();
-					String savedKey = decryptData(encryptedKey);
-
-					BufferedWriter writer = new BufferedWriter(
-							new OutputStreamWriter(new FileOutputStream(keyFile), StandardCharsets.UTF_8));
-					writer.write(""); // delete the old encrypted key
-					writer.write(encryptData(savedKey, newEncryptionKey)); // replace with new encrypted key
-					writer.close();
-				}
-			}
-
-			// change password file and password for the current session
-			// write salt and salted and hashed password
-			File pwf = new File(workingDir, username + "/pw");
-			BufferedWriter writer = new BufferedWriter(
-					new OutputStreamWriter(new FileOutputStream(pwf), StandardCharsets.UTF_8));
-			writer.write(salt + "\n");
-			writer.write(newPassword); // hashed password
-			writer.close();
-			setEncryptionKey(newPassword);
-
+			setPassword(username, newPassword, savedEmail);
 			return "Successfully changed password";
 		} catch (Exception e) {
 			return "A problem occurred while changing password";
 		}
 	}
+	
+	protected boolean verifyEmail(String username, String email) throws Exception {
+		File passwordFile = new File(workingDir, username +"/"+"pw");
+		Scanner reader = new Scanner(passwordFile);
+		reader.nextLine(); // throw away salt
+		reader.nextLine(); // throw away password
+		String savedEmail = reader.nextLine();
+		reader.close();
+		return hash(email).equals(savedEmail);
+	}
+	
+	protected void setPassword(String username, String newPassword, String email) throws Exception {
+		
+		// salt and hash the new password
+		String salt = encode64(getSalt());
+		newPassword = hash(salt + newPassword);
 
-	protected boolean verifyOTP() throws Exception {
+		for (int i = 0; i < HASH_ITERATIONS; i++) {
+			newPassword = hash(newPassword);
+		}
+
+		// retrieve the file containing all the keys for this user
+		File userDirectory = new File(workingDir, username);
+		String[] keyNames = userDirectory.list(); // list of all keys to be re-encrypted
+
+		// get the new encryption key from the new password
+		SecretKey newEncryptionKey = keyFromPassword(newPassword);
+
+		for (String keyName : keyNames) {
+			if (!keyName.equals("pw")) {
+				File keyFile = new File(workingDir, username + "/" + keyName);
+				Scanner keyReader = new Scanner(keyFile);
+				String encryptedKey = keyReader.nextLine();
+				keyReader.close();
+				String savedKey = decryptData(encryptedKey);
+
+				BufferedWriter writer = new BufferedWriter(
+						new OutputStreamWriter(new FileOutputStream(keyFile), StandardCharsets.UTF_8));
+				writer.write(""); // delete the old encrypted key
+				writer.write(encryptData(savedKey, newEncryptionKey)); // replace with new encrypted key
+				writer.close();
+			}
+		}
+
+		// change password file and password for the current session
+		// write salt and salted and hashed password
+		File pwf = new File(workingDir, username + "/pw");
+		BufferedWriter writer = new BufferedWriter(
+				new OutputStreamWriter(new FileOutputStream(pwf), StandardCharsets.UTF_8));
+		writer.write(salt + "\n");
+		writer.write(newPassword + "\n"); // hashed password
+		writer.write(email);
+		writer.close();
+		setEncryptionKey(newPassword);
+	}
+
+	protected boolean verifyOTP(String email) throws Exception {
 		String otp = generateOTP();
-		sendEmail("t_abc555@hotmail.com", otp); // replace with user's email
+		sendEmail(email, otp);
+		sendMessage("email sent");
 		try {
 			ScheduledExecutorService executor = Executors.newScheduledThreadPool(2);
 			final Future<Boolean> handler = executor.submit(new Callable<Boolean>() {
 				public Boolean call() throws Exception {
 					String input = readResponse();
+					if (input.startsWith("OTP"))
+						input = input.split(" ")[1];
 					if (input.equals(otp))
 						return true;
 					return false;
@@ -502,6 +546,15 @@ public class ServerThread extends Thread {
 		} catch (Exception e) {
 			return false;
 		}
+	}
+	
+	/**
+	 * Determines whether this log-in requires OTP verification
+	 * @param username
+	 * TODO: fix this method
+	 */
+	protected boolean requiresOTP(String username) {
+		return true;
 	}
 
 	/*------------------------------------------

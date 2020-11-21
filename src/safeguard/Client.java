@@ -96,7 +96,7 @@ public class Client {
 				return;
 			}
 
-			// log-in/register
+			// authenticate human
 			String line = "";
 			while (!line.equals("register") && !line.equals("log-in")) {
 				System.out.println("Please choose \"register\" or \"log-in\"?");
@@ -105,16 +105,15 @@ public class Client {
 				if (line.equals("register")) {
 					try {
 						register();
-						System.out.println("You can now log-in with your chosen username and password.");
+						//System.out.println("You can now log-in with your chosen username and password.");
 						line = "";
 					} catch (Exception e) {
 						System.out.println(e.getMessage());
-						System.out.println("Registration failed. Terminating connection.");
+						System.out.println("Unexpected error during registration. Terminating connection.");
 						line = "logout";
 						break;
 					}
 				}
-
 				if (line.equals("log-in")) {
 					try {
 						if (!login()) {
@@ -122,7 +121,7 @@ public class Client {
 						}
 					} catch (Exception e) {
 						System.out.println(e.getMessage());
-						System.out.println("Login failed. Terminating connection.");
+						System.out.println("Unexpected error during login. Terminating connection.");
 						line = "logout";
 						break;
 					}
@@ -177,14 +176,6 @@ public class Client {
 						line = "logout";
 					}
 				}
-				// TODO: work in progress; not meant to actually be used
-				else if (line.equals("verify with otp")) {
-					sendMessage("VERIFY");
-					System.out.println("Enter the OTP sent to your email:");
-					String in = console.nextLine();
-					sendMessage(in);
-					System.out.println(readResponse());
-				}
 			}
 
 			// close all the sockets and console
@@ -211,7 +202,6 @@ public class Client {
 	 */
 	protected boolean login() throws Exception {
 		String response = null;
-		// do {
 		// prompt for a username
 		System.out.print("Username: ");
 		String username = console.nextLine();
@@ -231,13 +221,32 @@ public class Client {
 		sendMessage("LOGIN " + username + " " + password);
 		response = readResponse();
 		System.out.println(response);
+		
+		if(response.equals("Requires email verification")) {
+			System.out.print("Confirm your email: ");
+			String email = console.nextLine();
+			while (email.contains(" "))
+				System.out.println("Error: incorrect or invalid email");
+			sendMessage("TOEMAIL " + email);
+			response = readResponse();
+			if(!response.equals("email sent")) {
+				System.out.println(response);
+				return false;
+			}
+			
+			// confirm the OTP
+			System.out.println("Enter the OTP sent to your email: ");
+			String in = console.nextLine();
+			sendMessage("OTP "+ in);
+			response = readResponse();
+			System.out.println(response);
+		}
 
 		// on a successful login, set the session username for later key accesses
 		if (response.equals("Successfully logged in")) {
 			session_username = username;
 			return true;
 		}
-		// } while (!response.equals("Successfully logged in"));
 		return false;
 	}
 
@@ -249,13 +258,21 @@ public class Client {
 	 */
 	protected void register() throws NoSuchAlgorithmException, Exception {
 		String response = null;
-		// do {
+		
 		// prompt for a username
 		System.out.print("Username: ");
 		String username = console.nextLine();
 		while (username.contains(" ")) { // because we use space as delimiter
 			System.out.print("Username cannot contain space. Please choose another username: ");
 			username = console.nextLine();
+		}
+		
+		// prompt for a reference email
+		System.out.print("Reference email: ");
+		String email = console.nextLine();
+		while (email.contains(" ") || !email.contains("@")) { // because we use space as delimiter
+			System.out.print("Invalid email address. Please re-enter an email: ");
+			email = console.nextLine();
 		}
 
 		// prompt for a password
@@ -273,10 +290,9 @@ public class Client {
 		}
 
 		// send a request to create an account
-		sendMessage("REGISTER " + username + " " + password);
+		sendMessage("REGISTER " + username + " " + password + " "+email);
 		response = readResponse();
 		System.out.println(response);
-		// } while (!response.equals("Successfully created an account."));
 	}
 
 	/**
@@ -363,6 +379,10 @@ public class Client {
 		System.out.println(response);
 	}
 
+	/**
+	 * Change password (knowing the current password)
+	 * @throws Exception
+	 */
 	protected void changePassword() throws Exception {
 		String response = null;
 
@@ -389,6 +409,58 @@ public class Client {
 		response = readResponse();
 		System.out.println(response);
 	}
+	
+	/**
+	 * Change password (forgot password)
+	 * @return whether the account recovery succeeded
+	 * @throws Exception
+	 */
+	/*protected void recoverAccount() throws Exception {
+		String response = null;
+		
+		// confirm the user's email
+		System.out.print("Username: ");
+		String username = console.nextLine();
+		System.out.print("Confirm your email: ");
+		String email = console.nextLine();
+		while (username.contains(" ") || email.contains(" ")) {
+			System.out.println("Error: incorrect or invalid username or email");
+			return;
+		}
+		sendMessage("RECOVER "+ username + " "+email);
+		if(readResponse().equals("failed")) {
+			System.out.println("Error: incorrect or invalid username or email");
+			return;
+		}
+		
+		// confirm the OTP
+		System.out.println("Enter the OTP sent to your email: ");
+		String in = console.nextLine();
+		sendMessage(in);
+		if(!readResponse().equals("verified")){
+			System.out.println("Error: email verification failed");
+			return;
+		}
+		
+		// prompt for a new password
+		System.out.print("New password: ");
+		String newPassword = console.nextLine();
+		PasswordStrength checker = new PasswordStrength();
+		boolean strong = checker.check_strength(newPassword);
+		while (!strong || newPassword.contains(" ")) {
+			if (!strong)
+				System.out.print("Weak password. Please choose another password: ");
+			else
+				System.out.print("Password cannot contain space. Please choose another password: ");
+			newPassword = console.nextLine();
+			strong = checker.check_strength(newPassword);
+		}
+
+		// send a request to create an account
+		sendMessage("NEWPASSWORD " + newPassword);
+		response = readResponse();
+		System.out.println(response);
+	}*/
 
 	/*------------------------------------------
 	 * IO HELPER FUNCTIONS
