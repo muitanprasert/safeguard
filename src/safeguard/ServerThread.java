@@ -73,7 +73,11 @@ public class ServerThread extends Thread {
 	private IvParameterSpec ivPB = new IvParameterSpec("encryptionIntVec".getBytes(StandardCharsets.UTF_8));
 	private byte[] saltPB = "fixedSaltForEncr".getBytes();
 
-	public ServerThread(Socket clientSocket) {
+	public ServerThread() {
+		this.clientSocket = clientSocket;
+	}
+
+	public void setSocket(Socket clientSocket) {
 		this.clientSocket = clientSocket;
 	}
 
@@ -156,16 +160,18 @@ public class ServerThread extends Thread {
 				String username = hash(components[1]);
 				String password = components[2]; // raw password
 				String response = login(username, password);
-				if(response.equals("Successfully logged in") && requiresOTP(username)) {
+				if (response.equals("Successfully logged in") && requiresOTP(username)) {
 					sendMessage("Requires email verification");
-					
+
 					// confirm email
 					msg = readResponse();
 					System.out.println(msg);
-					if(!msg.startsWith("TOEMAIL")) return "Message corrupted";
+					if (!msg.startsWith("TOEMAIL"))
+						return "Message corrupted";
 					String email = msg.split(" ")[1];
-					if(!verifyEmail(username, email)) return "Invalid or incorrect email";
-					if(verifyOTP(email))
+					if (!verifyEmail(username, email))
+						return "Invalid or incorrect email";
+					if (verifyOTP(email))
 						return "Successfully logged in";
 					return "Email verification failed";
 				}
@@ -222,29 +228,18 @@ public class ServerThread extends Thread {
 			} catch (Exception e) {
 				return "An error occurred during hashing. Please try again.";
 			}
-		} /*else if (msg.startsWith("RECOVER")) {
-			String[] components = msg.split(" ");
-			try {
-				String username = hash(components[1]);
-				String email = components[2];
-				String status = verifyUser(username, email);
-				sendMessage(status);
-				if(status.equals("verified")) {
-					msg = readResponse();
-					components = msg.split(" ");
-					if(!components[0].equals("NEWPASSWORD"))
-						return "Message corrupted.";
-					String newPassword = components[1];
-					setPassword(username, newPassword, email);
-					return "Successfully reset password.";
-				}
-				else
-					throw new Exception();
-			} catch (Exception e) {
-				e.printStackTrace();
-				return "Account recovery failed. Please try again.";
-			}
-		}*/
+		} /*
+			 * else if (msg.startsWith("RECOVER")) { String[] components = msg.split(" ");
+			 * try { String username = hash(components[1]); String email = components[2];
+			 * String status = verifyUser(username, email); sendMessage(status);
+			 * if(status.equals("verified")) { msg = readResponse(); components =
+			 * msg.split(" "); if(!components[0].equals("NEWPASSWORD")) return
+			 * "Message corrupted."; String newPassword = components[1];
+			 * setPassword(username, newPassword, email); return
+			 * "Successfully reset password."; } else throw new Exception(); } catch
+			 * (Exception e) { e.printStackTrace(); return
+			 * "Account recovery failed. Please try again."; } }
+			 */
 
 		return "Incorrect message format. Please try again.";
 	}
@@ -258,7 +253,7 @@ public class ServerThread extends Thread {
 	 * @throws Exception
 	 */
 	protected String login(String username, String password) throws Exception {
-		
+
 		// check if exists
 		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
@@ -283,7 +278,7 @@ public class ServerThread extends Thread {
 			setEncryptionKey(inputPassword);
 			return "Successfully logged in";
 		}
-		throw new IOException("Invalid credentials");
+		return "Invalid credentials";
 	}
 
 	/**
@@ -295,7 +290,8 @@ public class ServerThread extends Thread {
 	 * @throws IOException
 	 * @throws NoSuchAlgorithmException
 	 */
-	protected String createUser(String username, String password, String email) throws IOException, NoSuchAlgorithmException {
+	protected String createUser(String username, String password, String email)
+			throws IOException, NoSuchAlgorithmException {
 
 		// check if already exists
 		File f = new File(workingDir, username);
@@ -469,9 +465,9 @@ public class ServerThread extends Thread {
 			return "A problem occurred while changing password";
 		}
 	}
-	
+
 	protected boolean verifyEmail(String username, String email) throws Exception {
-		File passwordFile = new File(workingDir, username +"/"+"pw");
+		File passwordFile = new File(workingDir, username + "/" + "pw");
 		Scanner reader = new Scanner(passwordFile);
 		reader.nextLine(); // throw away salt
 		reader.nextLine(); // throw away password
@@ -479,9 +475,9 @@ public class ServerThread extends Thread {
 		reader.close();
 		return hash(email).equals(savedEmail);
 	}
-	
+
 	protected void setPassword(String username, String newPassword, String email) throws Exception {
-		
+
 		// salt and hash the new password
 		String salt = encode64(getSalt());
 		newPassword = hash(salt + newPassword);
@@ -547,11 +543,11 @@ public class ServerThread extends Thread {
 			return false;
 		}
 	}
-	
+
 	/**
 	 * Determines whether this log-in requires OTP verification
-	 * @param username
-	 * TODO: fix this method
+	 * 
+	 * @param username TODO: fix this method
 	 */
 	protected boolean requiresOTP(String username) {
 		return true;
@@ -851,6 +847,14 @@ public class ServerThread extends Thread {
 		byte[] decryptedData = decode64(encrypted);
 		byte[] utf8 = dcipher.doFinal(decryptedData);
 		return new String(utf8, "UTF-8");
+	}
+
+	public void setDirectory(String dir) {
+		workingDir = new File(dir);
+	}
+
+	public void setEncKeyTesting(String password) throws Exception {
+		encryptionKey = keyFromPassword(password);
 	}
 
 	public static void main(String[] args) {

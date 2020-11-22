@@ -9,5 +9,6 @@
 	<classpathentry kind="lib" path="dependencies/activation.jar"/>
 	<classpathentry kind="lib" path="dependencies/javax.mail.jar"/>
 	<classpathentry kind="lib" path="dependencies/bcprov-jdk15on-167b04.jar"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.junit.JUNIT_CONTAINER/5"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
