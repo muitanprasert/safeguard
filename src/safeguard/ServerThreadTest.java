@@ -42,7 +42,7 @@ class ServerThreadTest {
 
 		// incorrect username
 		response = thread.login("hello", password);
-		assertEquals(response, "Invalid credentials");
+		assertEquals(response, "Invalid username");
 
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
@@ -118,7 +118,9 @@ class ServerThreadTest {
 
 		// list all keys when they exists
 		response = thread.listKeys(username);
-		assertEquals(response, "Key name options are: password, bank, email, ");
+		assertTrue(response.contains("password"));
+		assertTrue(response.contains("bank"));
+		assertTrue(response.contains("email"));
 
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
