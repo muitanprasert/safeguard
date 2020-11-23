@@ -4,16 +4,23 @@
 package safeguard;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.security.Key;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -23,7 +30,10 @@ import java.security.SecureRandom;
 import java.security.Security;
 import java.security.Signature;
 import java.security.spec.KeySpec;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.Base64;
+import java.util.Date;
 import java.util.Properties;
 import java.util.Random;
 import java.util.Scanner;
@@ -72,9 +82,12 @@ public class ServerThread extends Thread {
 	private Cipher dcipher;
 	private IvParameterSpec ivPB = new IvParameterSpec("encryptionIntVec".getBytes(StandardCharsets.UTF_8));
 	private byte[] saltPB = "fixedSaltForEncr".getBytes();
+	private String ip;
+	private String lastLogin = "";
 
 	public ServerThread(Socket clientSocket) {
 		this.clientSocket = clientSocket;
+		this.ip = clientSocket.getRemoteSocketAddress().toString().split(":")[0];
 	}
 
 	public void run() {
@@ -88,7 +101,6 @@ public class ServerThread extends Thread {
 
 			// get the key transfer message from the client
 			finished = !parseKeyTransferMessage(streamIn.readUTF());
-			System.out.println("Received encrypted shared key.");
 
 			// hash to get a different key for MAC
 			MessageDigest md = MessageDigest.getInstance("MD5");
@@ -102,8 +114,6 @@ public class ServerThread extends Thread {
 			while (!finished) {
 				try {
 					String msg = readResponse();
-
-					System.out.println("Received msg: " + msg);
 					if (msg.equals("LOGOUT"))
 						finished = true;
 					else {
@@ -156,22 +166,11 @@ public class ServerThread extends Thread {
 				String username = hash(components[1]);
 				String password = components[2]; // raw password
 				String response = login(username, password);
-				if(response.equals("Successfully logged in") && requiresOTP(username)) {
-					sendMessage("Requires email verification");
-					
-					// confirm email
-					msg = readResponse();
-					System.out.println(msg);
-					if(!msg.startsWith("TOEMAIL")) return "Message corrupted";
-					String email = msg.split(" ")[1];
-					if(!verifyEmail(username, email)) return "Invalid or incorrect email";
-					if(verifyOTP(email))
-						return "Successfully logged in";
-					return "Email verification failed";
-				}
+				if(response.equals("Successfully logged in"))
+					response = secondFactor(username);
 				return response;
 			} catch (Exception e) {
-				return "Invalid credentials";
+				return "An error occurred. Please try again.";
 			}
 		} else if (msg.startsWith("NEWKEY")) {
 			int startIndex = msg.indexOf(" ") + 1;
@@ -222,29 +221,7 @@ public class ServerThread extends Thread {
 			} catch (Exception e) {
 				return "An error occurred during hashing. Please try again.";
 			}
-		} /*else if (msg.startsWith("RECOVER")) {
-			String[] components = msg.split(" ");
-			try {
-				String username = hash(components[1]);
-				String email = components[2];
-				String status = verifyUser(username, email);
-				sendMessage(status);
-				if(status.equals("verified")) {
-					msg = readResponse();
-					components = msg.split(" ");
-					if(!components[0].equals("NEWPASSWORD"))
-						return "Message corrupted.";
-					String newPassword = components[1];
-					setPassword(username, newPassword, email);
-					return "Successfully reset password.";
-				}
-				else
-					throw new Exception();
-			} catch (Exception e) {
-				e.printStackTrace();
-				return "Account recovery failed. Please try again.";
-			}
-		}*/
+		}
 
 		return "Incorrect message format. Please try again.";
 	}
@@ -262,7 +239,7 @@ public class ServerThread extends Thread {
 		// check if exists
 		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
-			return "Invalid credentials";
+			return "Invalid username";
 		}
 
 		// load the password on the file and check if it matches the input password
@@ -283,7 +260,7 @@ public class ServerThread extends Thread {
 			setEncryptionKey(inputPassword);
 			return "Successfully logged in";
 		}
-		throw new IOException("Invalid credentials");
+		return "Invalid credentials";
 	}
 
 	/**
@@ -379,7 +356,7 @@ public class ServerThread extends Thread {
 			String[] keyNames = keyFile.list();
 
 			for (String keyName : keyNames) {
-				if (!keyName.equals("pw")) {
+				if (!keyName.equals("pw") && !keyName.equals("log")) {
 					allKeys += keyName + ", ";
 				}
 			}
@@ -550,11 +527,65 @@ public class ServerThread extends Thread {
 	
 	/**
 	 * Determines whether this log-in requires OTP verification
+	 * and set lastLogin to the last log-in record
 	 * @param username
 	 * TODO: fix this method
+	 * @throws IOException 
 	 */
-	protected boolean requiresOTP(String username) {
-		return true;
+	protected boolean checkLog(String username) {
+		try {
+			File logfile = new File(workingDir, username+"/log");
+			FileReader fr = new FileReader(logfile);
+			BufferedReader br = new BufferedReader(fr);
+			String line, lastline = "";
+			boolean status = true;
+			while((line=br.readLine()) != null) {
+				line = decryptData(line).trim();
+				String old_ip = line.split(" on ")[0];
+				if(old_ip.equals(ip)) {
+					status = false;
+				}
+				lastline = line;
+			}
+			if(!lastline.equals(""))
+				lastLogin = "Your last log-in was from "+lastline;
+			else
+				lastLogin = "First log-in to this account";
+			br.close();
+			return status;
+		} catch(Exception e) {
+			lastLogin = "First log-in to this account";
+			return true;
+		}
+	}
+	
+	protected String secondFactor(String username) throws Exception {
+		boolean otp = checkLog(username);
+		String response = "Successfully logged in\n"+lastLogin;
+		if(otp){
+			sendMessage("Requires email verification");
+			
+			// confirm email
+			String msg = readResponse();
+			System.out.println(msg);
+			if(!msg.startsWith("TOEMAIL")) return "Message corrupted";
+			String email = msg.split(" ")[1];
+			if(!verifyEmail(username, email)) return "Invalid or incorrect email";
+			if(!verifyOTP(email))
+				 return "Email verification failed";
+		}
+		
+		// write log-in log entry
+		DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
+	    String date = dateFormat.format(new Date());
+		String log_entry = encryptData(ip +" on "+date)+"\n";
+		Path filepath = Paths.get(workingDir.getAbsolutePath(), username, "log");
+		try {
+			Files.createFile(filepath);
+		} catch(FileAlreadyExistsException e) {} // file already exists
+		Files.write(filepath, log_entry.getBytes(), StandardOpenOption.APPEND);
+		
+		return response;
 	}
 
 	/*------------------------------------------
@@ -723,9 +754,6 @@ public class ServerThread extends Thread {
 		String identity = new String(decode64(decrypted.substring(0, 8)), StandardCharsets.UTF_8);
 		identity = identity.substring(0, identity.length() - 1);
 		String key = decrypted.substring(8);
-		System.out.println("Estalished a session with " + identity);
-		System.out.println("With shared key: " + key);
-
 		sharedKey = decode64(key);
 
 		return valid_message;

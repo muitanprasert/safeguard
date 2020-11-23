@@ -59,11 +59,7 @@ public class Client {
 	 * 
 	 * @throws Exception
 	 */
-	public Client() throws Exception {
-
-		// IMPORTANT: change to another machine's address when not running locally
-		String serverAddress = "localhost"; // "pom-itb-cs2.campus.pomona.edu"; //
-
+	public Client(String serverAddress) throws Exception {
 		try {
 			// connect to the server
 			System.out.println("Connecting to Server at (" + PORT_NUMBER + ", " + serverAddress + ")...");
@@ -243,7 +239,7 @@ public class Client {
 		}
 
 		// on a successful login, set the session username for later key accesses
-		if (response.equals("Successfully logged in")) {
+		if (response.startsWith("Successfully logged in")) {
 			session_username = username;
 			return true;
 		}
@@ -409,58 +405,6 @@ public class Client {
 		response = readResponse();
 		System.out.println(response);
 	}
-	
-	/**
-	 * Change password (forgot password)
-	 * @return whether the account recovery succeeded
-	 * @throws Exception
-	 */
-	/*protected void recoverAccount() throws Exception {
-		String response = null;
-		
-		// confirm the user's email
-		System.out.print("Username: ");
-		String username = console.nextLine();
-		System.out.print("Confirm your email: ");
-		String email = console.nextLine();
-		while (username.contains(" ") || email.contains(" ")) {
-			System.out.println("Error: incorrect or invalid username or email");
-			return;
-		}
-		sendMessage("RECOVER "+ username + " "+email);
-		if(readResponse().equals("failed")) {
-			System.out.println("Error: incorrect or invalid username or email");
-			return;
-		}
-		
-		// confirm the OTP
-		System.out.println("Enter the OTP sent to your email: ");
-		String in = console.nextLine();
-		sendMessage(in);
-		if(!readResponse().equals("verified")){
-			System.out.println("Error: email verification failed");
-			return;
-		}
-		
-		// prompt for a new password
-		System.out.print("New password: ");
-		String newPassword = console.nextLine();
-		PasswordStrength checker = new PasswordStrength();
-		boolean strong = checker.check_strength(newPassword);
-		while (!strong || newPassword.contains(" ")) {
-			if (!strong)
-				System.out.print("Weak password. Please choose another password: ");
-			else
-				System.out.print("Password cannot contain space. Please choose another password: ");
-			newPassword = console.nextLine();
-			strong = checker.check_strength(newPassword);
-		}
-
-		// send a request to create an account
-		sendMessage("NEWPASSWORD " + newPassword);
-		response = readResponse();
-		System.out.println(response);
-	}*/
 
 	/*------------------------------------------
 	 * IO HELPER FUNCTIONS
@@ -596,7 +540,6 @@ public class Client {
 		// save the shared key and concatenate it with the name of the client
 		sharedKey = secretKey.getEncoded(); // encryption key
 		byte[] messageToEncrypt = concatBytes("Alice,".getBytes("UTF-8"), sharedKey);
-		System.out.println("Shared key in Base64: " + encode64(sharedKey));
 
 		// encode the client name + shared key with B's public key
 		cipherRSA.init(Cipher.ENCRYPT_MODE, pubKeyB, random);
@@ -674,7 +617,12 @@ public class Client {
 	 */
 	public static void main(String[] args) {
 		try {
-			new Client();
+			String serverAddress;
+			if(args.length < 1)
+				serverAddress = "localhost"; // default
+			else
+				serverAddress = args[0]; // e.g. pom-itb-cs2.campus.pomona.edu
+			new Client(serverAddress);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
