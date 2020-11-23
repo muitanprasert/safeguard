@@ -85,7 +85,11 @@ public class ServerThread extends Thread {
 	private String ip;
 	private String lastLogin = "";
 
-	public ServerThread(Socket clientSocket) {
+	public ServerThread() {
+		this.clientSocket = clientSocket;
+	}
+
+	public void setSocket(Socket clientSocket) {
 		this.clientSocket = clientSocket;
 		this.ip = clientSocket.getRemoteSocketAddress().toString().split(":")[0];
 	}
@@ -235,7 +239,7 @@ public class ServerThread extends Thread {
 	 * @throws Exception
 	 */
 	protected String login(String username, String password) throws Exception {
-		
+
 		// check if exists
 		File f = new File(workingDir, username);
 		if (!f.exists() || !f.isDirectory()) {
@@ -272,7 +276,8 @@ public class ServerThread extends Thread {
 	 * @throws IOException
 	 * @throws NoSuchAlgorithmException
 	 */
-	protected String createUser(String username, String password, String email) throws IOException, NoSuchAlgorithmException {
+	protected String createUser(String username, String password, String email)
+			throws IOException, NoSuchAlgorithmException {
 
 		// check if already exists
 		File f = new File(workingDir, username);
@@ -446,9 +451,9 @@ public class ServerThread extends Thread {
 			return "A problem occurred while changing password";
 		}
 	}
-	
+
 	protected boolean verifyEmail(String username, String email) throws Exception {
-		File passwordFile = new File(workingDir, username +"/"+"pw");
+		File passwordFile = new File(workingDir, username + "/" + "pw");
 		Scanner reader = new Scanner(passwordFile);
 		reader.nextLine(); // throw away salt
 		reader.nextLine(); // throw away password
@@ -456,9 +461,9 @@ public class ServerThread extends Thread {
 		reader.close();
 		return hash(email).equals(savedEmail);
 	}
-	
+
 	protected void setPassword(String username, String newPassword, String email) throws Exception {
-		
+
 		// salt and hash the new password
 		String salt = encode64(getSalt());
 		newPassword = hash(salt + newPassword);
@@ -524,12 +529,11 @@ public class ServerThread extends Thread {
 			return false;
 		}
 	}
-	
+
 	/**
 	 * Determines whether this log-in requires OTP verification
 	 * and set lastLogin to the last log-in record
 	 * @param username
-	 * TODO: fix this method
 	 * @throws IOException 
 	 */
 	protected boolean checkLog(String username) {
@@ -879,6 +883,14 @@ public class ServerThread extends Thread {
 		byte[] decryptedData = decode64(encrypted);
 		byte[] utf8 = dcipher.doFinal(decryptedData);
 		return new String(utf8, "UTF-8");
+	}
+
+	public void setDirectory(String dir) {
+		workingDir = new File(dir);
+	}
+
+	public void setEncKeyTesting(String password) throws Exception {
+		encryptionKey = keyFromPassword(password);
 	}
 
 	public static void main(String[] args) {

@@ -63,7 +63,9 @@ public class Server {
 					System.out.println(e);
 				}
 				// new thread for the client
-				new ServerThread(socket).start();
+				ServerThread thread = new ServerThread();
+				thread.setSocket(socket);
+				thread.start();
 			}
 		} catch (IOException e) {
 			// print error if the server fails
