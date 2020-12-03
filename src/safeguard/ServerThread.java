@@ -769,18 +769,23 @@ public class ServerThread extends Thread {
 	protected String getCertificate() throws Exception {
 		// generate public/private key
 		Gen gen = new Gen();
+		gen.generateSigningKey("A");
 		gen.generateEncrptionKey("B");
+		Key privKeyA = Gen.getKeyFromFile("A", "sk", "DSA");
+		String privA = encode64(privKeyA.getEncoded());
 		Key pubKeyB = Gen.getKeyFromFile("B", "pk", "RSA");
 		String publicB = encode64(pubKeyB.getEncoded());
+		
+		String keys = publicB + " " + privA;
 
 		// sign with CA secret key
 		PrivateKey signKeyCA = (PrivateKey) Gen.getKeyFromFile("CA", "sk", "DSA");
 		Signature sign = Signature.getInstance("SHA256withDSA");
 		sign.initSign(signKeyCA);
-		sign.update(decode64(publicB));
+		sign.update(keys.getBytes("UTF-8"));
 		String signature = encode64(sign.sign());
-
-		return publicB + "," + signature;
+		
+		return keys + "," + signature;
 	}
 
 	/**

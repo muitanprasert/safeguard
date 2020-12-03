@@ -24,9 +24,3 @@ _Running Instructions_
 * `java safeguard.Server`
 * `java safeguard.Client`
 * to start up the client and server
-
-contentsOfKey:
-IQWRLCEVYRkQOahIVaw0IQ==
-1ED9umYMOLOJVSP8gV0e1Q==
-
-[B@71bbbadc
