@@ -218,4 +218,5 @@ class ServerThreadTest {
 		}
 		userFile.delete();
 	}
+
 }
