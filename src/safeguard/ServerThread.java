@@ -66,7 +66,6 @@ import javax.mail.internet.MimeMessage;
 public class ServerThread extends Thread {
 	protected Socket clientSocket;
 
-	private static final int KEY_LENGTH_AES = 128;
 	private static final int MAC_LENGTH = 44;
 	private static final int OTP_LIMIT = 3; // minutes
 	private static final int HASH_ITERATIONS = 100000;
@@ -81,14 +80,17 @@ public class ServerThread extends Thread {
 	private int msgNumber = 0;
 	private Cipher dcipher;
 	private IvParameterSpec ivPB = new IvParameterSpec("encryptionIntVec".getBytes(StandardCharsets.UTF_8));
-	private byte[] saltPB = "fixedSaltForEncr".getBytes();
+	private byte[] saltPB;
 	private String ip;
 	private String lastLogin = "";
 
 	public ServerThread() {
-		this.clientSocket = clientSocket;
 	}
 
+	/**
+	 * Called by Server class to set client's socket in the thread instance
+	 * @param clientSocket
+	 */
 	public void setSocket(Socket clientSocket) {
 		this.clientSocket = clientSocket;
 		this.ip = clientSocket.getRemoteSocketAddress().toString().split(":")[0];
@@ -96,6 +98,8 @@ public class ServerThread extends Thread {
 
 	public void run() {
 		try {
+			saltPB = "fixedSaltForEncr".getBytes("UTF-8"); // set init salt value
+			
 			streamIn = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
 			streamOut = new DataOutputStream(clientSocket.getOutputStream());
 
@@ -248,7 +252,7 @@ public class ServerThread extends Thread {
 
 		// load the password on the file and check if it matches the input password
 		File passwordFile = new File(workingDir, username + "/pw");
-		Scanner passwordReader = new Scanner(passwordFile);
+		Scanner passwordReader = new Scanner(passwordFile, "UTF-8");
 		String savedSalt = passwordReader.nextLine();
 		String savedPassword = passwordReader.nextLine();
 		passwordReader.close();
@@ -357,12 +361,12 @@ public class ServerThread extends Thread {
 			String allKeys = "";
 
 			// retrieve the file containing all the keys for this user
-			File keyFile = new File(workingDir, username);
-			String[] keyNames = keyFile.list();
-
-			for (String keyName : keyNames) {
-				if (!keyName.equals("pw") && !keyName.equals("log")) {
-					allKeys += keyName + ", ";
+			String[] keyNames = f.list();
+			if(keyNames != null) {
+				for (String keyName : keyNames) {
+					if (!keyName.equals("pw") && !keyName.equals("log")) {
+						allKeys += keyName + ", ";
+					}
 				}
 			}
 			return "Key name options are: " + allKeys;
@@ -389,7 +393,7 @@ public class ServerThread extends Thread {
 		try {
 			// retrieve the file containing the key
 			File keyFile = new File(workingDir, username + "/" + keyName);
-			Scanner keyReader = new Scanner(keyFile);
+			Scanner keyReader = new Scanner(keyFile, "UTF-8");
 			String encryptedKey = keyReader.nextLine();
 			keyReader.close();
 
@@ -428,10 +432,9 @@ public class ServerThread extends Thread {
 			return "Directory not found. Message may have been corrupted. Try again or reconnect to server";
 		}
 		try {
-
 			// verify the old password is correct
 			File passwordFile = new File(workingDir, username + "/pw");
-			Scanner passwordReader = new Scanner(passwordFile);
+			Scanner passwordReader = new Scanner(passwordFile, "UTF-8");
 			String savedSalt = passwordReader.nextLine();
 			String savedPassword = passwordReader.nextLine();
 			String savedEmail = passwordReader.nextLine();
@@ -447,6 +450,8 @@ public class ServerThread extends Thread {
 			}
 			setPassword(username, newPassword, savedEmail);
 			return "Successfully changed password";
+		} catch (FileNotFoundException e) {
+			return "A problem occurred with retrieving password files";
 		} catch (Exception e) {
 			return "A problem occurred while changing password";
 		}
@@ -454,7 +459,7 @@ public class ServerThread extends Thread {
 
 	protected boolean verifyEmail(String username, String email) throws Exception {
 		File passwordFile = new File(workingDir, username + "/" + "pw");
-		Scanner reader = new Scanner(passwordFile);
+		Scanner reader = new Scanner(passwordFile, "UTF-8");
 		reader.nextLine(); // throw away salt
 		reader.nextLine(); // throw away password
 		String savedEmail = reader.nextLine();
@@ -479,19 +484,21 @@ public class ServerThread extends Thread {
 		// get the new encryption key from the new password
 		SecretKey newEncryptionKey = keyFromPassword(newPassword);
 
-		for (String keyName : keyNames) {
-			if (!keyName.equals("pw")) {
-				File keyFile = new File(workingDir, username + "/" + keyName);
-				Scanner keyReader = new Scanner(keyFile);
-				String encryptedKey = keyReader.nextLine();
-				keyReader.close();
-				String savedKey = decryptData(encryptedKey);
-
-				BufferedWriter writer = new BufferedWriter(
-						new OutputStreamWriter(new FileOutputStream(keyFile), StandardCharsets.UTF_8));
-				writer.write(""); // delete the old encrypted key
-				writer.write(encryptData(savedKey, newEncryptionKey)); // replace with new encrypted key
-				writer.close();
+		if(keyNames != null) {
+			for (String keyName : keyNames) {
+				if (!keyName.equals("pw")) {
+					File keyFile = new File(workingDir, username + "/" + keyName);
+					Scanner keyReader = new Scanner(keyFile, "UTF-8");
+					String encryptedKey = keyReader.nextLine();
+					keyReader.close();
+					String savedKey = decryptData(encryptedKey);
+	
+					BufferedWriter writer = new BufferedWriter(
+							new OutputStreamWriter(new FileOutputStream(keyFile), StandardCharsets.UTF_8));
+					writer.write(""); // delete the old encrypted key
+					writer.write(encryptData(savedKey, newEncryptionKey)); // replace with new encrypted key
+					writer.close();
+				}
 			}
 		}
 
@@ -586,8 +593,10 @@ public class ServerThread extends Thread {
 		Path filepath = Paths.get(workingDir.getAbsolutePath(), username, "log");
 		try {
 			Files.createFile(filepath);
-		} catch(FileAlreadyExistsException e) {} // file already exists
-		Files.write(filepath, log_entry.getBytes(), StandardOpenOption.APPEND);
+		} catch(FileAlreadyExistsException e) {
+			// file already exists, do nothing
+		}
+		Files.write(filepath, log_entry.getBytes("UTF-8"), StandardOpenOption.APPEND);
 		
 		return response;
 	}
@@ -754,9 +763,7 @@ public class ServerThread extends Thread {
 		}
 		System.out.println("Digital signature, name, and time validated.");
 
-		// split decrypted message into identity and key
-		String identity = new String(decode64(decrypted.substring(0, 8)), StandardCharsets.UTF_8);
-		identity = identity.substring(0, identity.length() - 1);
+		// get key from decrypted message
 		String key = decrypted.substring(8);
 		sharedKey = decode64(key);
 
