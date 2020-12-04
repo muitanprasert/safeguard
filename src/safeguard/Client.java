@@ -17,6 +17,7 @@ import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.Signature;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.Scanner;
@@ -48,6 +49,7 @@ public class Client {
 
 	private byte[] sharedKey;
 	private byte[] macKey;
+	private Key pubKeyB, privKeyA;
 
 	// the username that is currently logged in
 	private String session_username;
@@ -71,15 +73,13 @@ public class Client {
 			console = new Scanner(System.in, "utf-8");
 
 			// verify certificate: server's public key and signature
-			Key pubKeyB = verifyCertificate();
+			verifyCertificate();
 
 			// key transport protocol
 			Gen gen = new Gen();
 			try {
-				gen.generateSigningKey("A");
-
 				// generate key transfer message
-				streamOut.writeUTF(generateKeyTransferMessage(pubKeyB));
+				streamOut.writeUTF(generateKeyTransferMessage(pubKeyB, privKeyA));
 				streamOut.flush();
 
 				// hash to get a different key for MAC
@@ -426,19 +426,19 @@ public class Client {
 		Mac mac = Mac.getInstance("HmacSHA256");
 		mac.init(new SecretKeySpec(macKey, "HmacSHA256"));
 
-		String correctTag = encode64((mac.doFinal(msg.getBytes(StandardCharsets.UTF_8))));
+		String correctTag = encode64((mac.doFinal(msg.getBytes("UTF-8"))));
 		if (!tag.equals(correctTag)) {
 			throw new Exception("MAC tag didn't match. Closing connection...");
 		}
 
 		// decrypt the message
-		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes(StandardCharsets.UTF_8));
+		IvParameterSpec iv = new IvParameterSpec("encryptionIntVec".getBytes("UTF-8"));
 		SecretKeySpec skeySpec = new SecretKeySpec(sharedKey, "AES");
 
 		Cipher cipherAES = Cipher.getInstance("AES/CBC/PKCS5PADDING");
 		cipherAES.init(Cipher.DECRYPT_MODE, skeySpec, iv);
 
-		msg = new String(cipherAES.doFinal(decode64(msg)), StandardCharsets.UTF_8);
+		msg = new String(cipherAES.doFinal(decode64(msg)), "UTF-8");
 		msg = msg.substring(8, msg.length()); // remove the message number from the message
 
 		return msg;
@@ -497,26 +497,36 @@ public class Client {
 	 * @return
 	 * @throws Exception
 	 */
-	protected Key verifyCertificate() throws Exception {
+	protected void verifyCertificate() throws Exception {
 		boolean verified;
 
 		// get certificate as a message from server
 		try {
 			String cert = streamIn.readUTF();
-			byte[] publicB = decode64(cert.split(",")[0]);
-			byte[] signedPublicB = decode64(cert.split(",")[1]);
+			String twokeys = cert.split(",")[0];
+			byte[] keys = twokeys.getBytes("UTF-8");
+			byte[] signedKeys = decode64(cert.split(",")[1]);
 			PublicKey verificationKeyCA = (PublicKey) Gen.getKeyFromFile("CA", "pk", "DSA");
 			Signature sign = Signature.getInstance("SHA256withDSA");
 			sign.initVerify(verificationKeyCA);
-			sign.update(publicB);
-			verified = sign.verify(signedPublicB);
+			sign.update(keys);
+			verified = sign.verify(signedKeys);
 
 			// terminate immediately if the certificate does not verify
 			if (verified) {
 				System.out.println("Certificate verified.");
+				
+				// create encryption key
+				byte[] pubB = decode64(twokeys.split(" ")[0]);
 				KeyFactory kf = KeyFactory.getInstance("RSA");
-				X509EncodedKeySpec spec = new X509EncodedKeySpec(publicB);
-				return kf.generatePublic(spec);
+				X509EncodedKeySpec spec = new X509EncodedKeySpec(pubB);
+				pubKeyB = kf.generatePublic(spec);
+				
+				// create sign key
+				byte[] privA = decode64(twokeys.split(" ")[1]);
+				kf = KeyFactory.getInstance("DSA");
+				PKCS8EncodedKeySpec spec2 = new PKCS8EncodedKeySpec(privA);
+				privKeyA = kf.generatePrivate(spec2);
 			} else
 				throw new Exception();
 		} catch (Exception e) {
@@ -525,7 +535,7 @@ public class Client {
 		}
 	}
 
-	protected String generateKeyTransferMessage(Key pubKeyB) throws Exception {
+	protected String generateKeyTransferMessage(Key pubKeyB, Key signKeyA) throws Exception {
 
 		// load the RSA encryption scheme
 		SecureRandom random = new SecureRandom();
@@ -549,13 +559,10 @@ public class Client {
 		// message
 		long currentTime = System.currentTimeMillis();
 		String keyTransportMessage = "Bob|" + Long.toString(currentTime) + "|" + encryptedMessage;
-
-		// get the client's signing key
-		PrivateKey signKeyA = (PrivateKey) Gen.getKeyFromFile("A", "sk", "DSA");
-
+		
 		// generate the signature for the message with the client's signing key
 		Signature sign = Signature.getInstance("SHA256withDSA");
-		sign.initSign(signKeyA);
+		sign.initSign((PrivateKey)signKeyA);
 
 		sign.update(decode64(keyTransportMessage));
 		String signature = encode64(sign.sign());
