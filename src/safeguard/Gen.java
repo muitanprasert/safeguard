@@ -135,7 +135,7 @@ public class Gen {
 		// set-up directory if it doesn't exist
 		File dir = new File("users");
 		if (!dir.exists())
-			if(!dir.mkdirs())
+			if (!dir.mkdirs())
 				System.out.println("Problem occurred while setting up directory");
 	}
 }

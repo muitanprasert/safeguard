@@ -89,6 +89,7 @@ public class ServerThread extends Thread {
 
 	/**
 	 * Called by Server class to set client's socket in the thread instance
+	 * 
 	 * @param clientSocket
 	 */
 	public void setSocket(Socket clientSocket) {
@@ -99,7 +100,7 @@ public class ServerThread extends Thread {
 	public void run() {
 		try {
 			saltPB = "fixedSaltForEncr".getBytes("UTF-8"); // set init salt value
-			
+
 			streamIn = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
 			streamOut = new DataOutputStream(clientSocket.getOutputStream());
 
@@ -174,7 +175,7 @@ public class ServerThread extends Thread {
 				String username = hash(components[1]);
 				String password = components[2]; // raw password
 				String response = login(username, password);
-				if(response.equals("Successfully logged in"))
+				if (response.equals("Successfully logged in"))
 					response = secondFactor(username);
 				return response;
 			} catch (Exception e) {
@@ -362,7 +363,7 @@ public class ServerThread extends Thread {
 
 			// retrieve the file containing all the keys for this user
 			String[] keyNames = f.list();
-			if(keyNames != null) {
+			if (keyNames != null) {
 				for (String keyName : keyNames) {
 					if (!keyName.equals("pw") && !keyName.equals("log")) {
 						allKeys += keyName + ", ";
@@ -484,7 +485,7 @@ public class ServerThread extends Thread {
 		// get the new encryption key from the new password
 		SecretKey newEncryptionKey = keyFromPassword(newPassword);
 
-		if(keyNames != null) {
+		if (keyNames != null) {
 			for (String keyName : keyNames) {
 				if (!keyName.equals("pw")) {
 					File keyFile = new File(workingDir, username + "/" + keyName);
@@ -492,7 +493,7 @@ public class ServerThread extends Thread {
 					String encryptedKey = keyReader.nextLine();
 					keyReader.close();
 					String savedKey = decryptData(encryptedKey);
-	
+
 					BufferedWriter writer = new BufferedWriter(
 							new OutputStreamWriter(new FileOutputStream(keyFile), StandardCharsets.UTF_8));
 					writer.write(""); // delete the old encrypted key
@@ -538,66 +539,69 @@ public class ServerThread extends Thread {
 	}
 
 	/**
-	 * Determines whether this log-in requires OTP verification
-	 * and set lastLogin to the last log-in record
+	 * Determines whether this log-in requires OTP verification and set lastLogin to
+	 * the last log-in record
+	 * 
 	 * @param username
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	protected boolean checkLog(String username) {
 		try {
-			File logfile = new File(workingDir, username+"/log");
+			File logfile = new File(workingDir, username + "/log");
 			FileReader fr = new FileReader(logfile);
 			BufferedReader br = new BufferedReader(fr);
 			String line, lastline = "";
 			boolean status = true;
-			while((line=br.readLine()) != null) {
+			while ((line = br.readLine()) != null) {
 				line = decryptData(line).trim();
 				String old_ip = line.split(" on ")[0];
-				if(old_ip.equals(ip)) {
+				if (old_ip.equals(ip)) {
 					status = false;
 				}
 				lastline = line;
 			}
-			if(!lastline.equals(""))
-				lastLogin = "Your last log-in was from "+lastline;
+			if (!lastline.equals(""))
+				lastLogin = "Your last log-in was from " + lastline;
 			else
 				lastLogin = "First log-in to this account";
 			br.close();
 			return status;
-		} catch(Exception e) {
+		} catch (Exception e) {
 			lastLogin = "First log-in to this account";
 			return true;
 		}
 	}
-	
+
 	protected String secondFactor(String username) throws Exception {
 		boolean otp = checkLog(username);
-		String response = "Successfully logged in\n"+lastLogin;
-		if(otp){
+		String response = "Successfully logged in\n" + lastLogin;
+		if (otp) {
 			sendMessage("Requires email verification");
-			
+
 			// confirm email
 			String msg = readResponse();
 			System.out.println(msg);
-			if(!msg.startsWith("TOEMAIL")) return "Message corrupted";
+			if (!msg.startsWith("TOEMAIL"))
+				return "Message corrupted";
 			String email = msg.split(" ")[1];
-			if(!verifyEmail(username, email)) return "Invalid or incorrect email";
-			if(!verifyOTP(email))
-				 return "Email verification failed";
+			if (!verifyEmail(username, email))
+				return "Invalid or incorrect email";
+			if (!verifyOTP(email))
+				return "Email verification failed";
 		}
-		
+
 		// write log-in log entry
 		DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
-	    String date = dateFormat.format(new Date());
-		String log_entry = encryptData(ip +" on "+date)+"\n";
+		String date = dateFormat.format(new Date());
+		String log_entry = encryptData(ip + " on " + date) + "\n";
 		Path filepath = Paths.get(workingDir.getAbsolutePath(), username, "log");
 		try {
 			Files.createFile(filepath);
-		} catch(FileAlreadyExistsException e) {
+		} catch (FileAlreadyExistsException e) {
 			// file already exists, do nothing
 		}
 		Files.write(filepath, log_entry.getBytes("UTF-8"), StandardOpenOption.APPEND);
-		
+
 		return response;
 	}
 
@@ -782,7 +786,7 @@ public class ServerThread extends Thread {
 		String privA = encode64(privKeyA.getEncoded());
 		Key pubKeyB = Gen.getKeyFromFile("B", "pk", "RSA");
 		String publicB = encode64(pubKeyB.getEncoded());
-		
+
 		String keys = publicB + " " + privA;
 
 		// sign with CA secret key
@@ -791,7 +795,7 @@ public class ServerThread extends Thread {
 		sign.initSign(signKeyCA);
 		sign.update(keys.getBytes("UTF-8"));
 		String signature = encode64(sign.sign());
-		
+
 		return keys + "," + signature;
 	}
 

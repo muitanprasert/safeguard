@@ -30,8 +30,10 @@ class ServerThreadTest {
 	@Test
 	void testLogin() throws Exception {
 		// assume createUser is correct for login test
+		thread.run();
 		thread.createUser(username, password, email);
 
+		// thread.setEncKeyTesting(password);
 		// correct password
 		String response = thread.login(username, password);
 		assertEquals(response, "Successfully logged in");
@@ -47,7 +49,7 @@ class ServerThreadTest {
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
 		String[] entries = userFile.list();
-		
+
 		assertNotNull(entries);
 		for (String s : entries) {
 			File currentFile = new File(userFile.getPath(), s);
@@ -59,6 +61,7 @@ class ServerThreadTest {
 	@Test
 	void testCreateUser() throws NoSuchAlgorithmException, IOException, NullPointerException {
 		// create a user successfully
+		thread.run();
 		String response = thread.createUser(username, password, email);
 		assertEquals(response, "Successfully created an account.");
 
@@ -79,6 +82,7 @@ class ServerThreadTest {
 
 	@Test
 	void testCreateKey() throws Exception {
+		thread.run();
 		thread.createUser(username, password, email);
 		thread.setEncKeyTesting(password);
 		thread.setDirectory("users");
@@ -108,6 +112,7 @@ class ServerThreadTest {
 
 	@Test
 	void testListKeys() throws Exception {
+		thread.run();
 		thread.createUser(username, password, email);
 		thread.setEncKeyTesting(password);
 		thread.setDirectory("users");
@@ -139,6 +144,7 @@ class ServerThreadTest {
 
 	@Test
 	void testLoadKey() throws Exception {
+		thread.run();
 		thread.createUser(username, password, email);
 		thread.setEncKeyTesting(password);
 		thread.setDirectory("users");
@@ -166,6 +172,7 @@ class ServerThreadTest {
 
 	@Test
 	void testDeleteKey() throws Exception {
+		thread.run();
 		thread.createUser(username, password, email);
 		thread.setEncKeyTesting(password);
 		thread.setDirectory("users");
@@ -193,6 +200,7 @@ class ServerThreadTest {
 
 	@Test
 	void testChangePassword() throws Exception {
+		thread.run();
 		thread.createUser(username, password, email);
 		thread.setEncKeyTesting(password);
 		thread.setDirectory("users");

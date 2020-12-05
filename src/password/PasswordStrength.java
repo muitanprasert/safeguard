@@ -28,9 +28,10 @@ public class PasswordStrength {
 		else
 			System.out.println("weak");
 	}
-	
+
 	/**
 	 * Empty constructor
+	 * 
 	 * @throws IOException
 	 */
 	public PasswordStrength() throws IOException {
@@ -38,6 +39,7 @@ public class PasswordStrength {
 
 	/**
 	 * Return true if strong, false if weak
+	 * 
 	 * @param pw
 	 * @return
 	 * @throws IOException
@@ -65,7 +67,8 @@ public class PasswordStrength {
 	 * @throws IOException
 	 */
 	private boolean check_wordlist(String pw, String filename) throws IOException {
-		BufferedReader br = new BufferedReader(new InputStreamReader(this.getClass().getResourceAsStream(filename), "UTF-8"));
+		BufferedReader br = new BufferedReader(
+				new InputStreamReader(this.getClass().getResourceAsStream(filename), "UTF-8"));
 		ArrayList<String> sb = new ArrayList<String>();
 		String line;
 		while ((line = br.readLine()) != null)
@@ -75,16 +78,5 @@ public class PasswordStrength {
 		if (sb.contains(pw))
 			return false;
 		return true;
-	}
-
-	/**
-	 * runs the password strength checker
-	 * 
-	 * @throws IOException
-	 */
-	public static void main(String[] args) throws IOException {
-		if (args.length < 1)
-			System.out.println("Incorrect number of arguments");
-		new PasswordStrength(args[0]);
 	}
 }

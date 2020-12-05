@@ -22,6 +22,8 @@ class PasswordStrengthTest {
 	void testCheck_strength() throws IOException {
 		PasswordStrength checker = new PasswordStrength();
 		assertTrue(!checker.check_strength(weakPassword));
+		assertTrue(!checker.check_strength("password"));
+		assertTrue(!checker.check_strength("short"));
 		assertTrue(checker.check_strength(strongPassword));
 	}
 

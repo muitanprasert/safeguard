@@ -99,7 +99,8 @@ public class Client {
 				if (line.equals("register")) {
 					try {
 						register();
-						//System.out.println("You can now log-in with your chosen username and password.");
+						// System.out.println("You can now log-in with your chosen username and
+						// password.");
 						line = "";
 					} catch (Exception e) {
 						System.out.println(e.getMessage());
@@ -215,23 +216,23 @@ public class Client {
 		sendMessage("LOGIN " + username + " " + password);
 		response = readResponse();
 		System.out.println(response);
-		
-		if(response.equals("Requires email verification")) {
+
+		if (response.equals("Requires email verification")) {
 			System.out.print("Confirm your email: ");
 			String email = console.nextLine();
 			while (email.contains(" "))
 				System.out.println("Error: incorrect or invalid email");
 			sendMessage("TOEMAIL " + email);
 			response = readResponse();
-			if(!response.equals("email sent")) {
+			if (!response.equals("email sent")) {
 				System.out.println(response);
 				return false;
 			}
-			
+
 			// confirm the OTP
 			System.out.println("Enter the OTP sent to your email: ");
 			String in = console.nextLine();
-			sendMessage("OTP "+ in);
+			sendMessage("OTP " + in);
 			response = readResponse();
 			System.out.println(response);
 		}
@@ -252,7 +253,7 @@ public class Client {
 	 */
 	protected void register() throws NoSuchAlgorithmException, Exception {
 		String response = null;
-		
+
 		// prompt for a username
 		System.out.print("Username: ");
 		String username = console.nextLine();
@@ -260,7 +261,7 @@ public class Client {
 			System.out.print("Username cannot contain space. Please choose another username: ");
 			username = console.nextLine();
 		}
-		
+
 		// prompt for a reference email
 		System.out.print("Reference email: ");
 		String email = console.nextLine();
@@ -284,7 +285,7 @@ public class Client {
 		}
 
 		// send a request to create an account
-		sendMessage("REGISTER " + username + " " + password + " "+email);
+		sendMessage("REGISTER " + username + " " + password + " " + email);
 		response = readResponse();
 		System.out.println(response);
 	}
@@ -375,6 +376,7 @@ public class Client {
 
 	/**
 	 * Change password (knowing the current password)
+	 * 
 	 * @throws Exception
 	 */
 	protected void changePassword() throws Exception {
@@ -513,13 +515,13 @@ public class Client {
 			// terminate immediately if the certificate does not verify
 			if (verified) {
 				System.out.println("Certificate verified.");
-				
+
 				// create encryption key
 				byte[] pubB = decode64(twokeys.split(" ")[0]);
 				KeyFactory kf = KeyFactory.getInstance("RSA");
 				X509EncodedKeySpec spec = new X509EncodedKeySpec(pubB);
 				pubKeyB = kf.generatePublic(spec);
-				
+
 				// create sign key
 				byte[] privA = decode64(twokeys.split(" ")[1]);
 				kf = KeyFactory.getInstance("DSA");
@@ -557,10 +559,10 @@ public class Client {
 		// message
 		long currentTime = System.currentTimeMillis();
 		String keyTransportMessage = "Bob|" + Long.toString(currentTime) + "|" + encryptedMessage;
-		
+
 		// generate the signature for the message with the client's signing key
 		Signature sign = Signature.getInstance("SHA256withDSA");
-		sign.initSign((PrivateKey)signKeyA);
+		sign.initSign((PrivateKey) signKeyA);
 
 		sign.update(decode64(keyTransportMessage));
 		String signature = encode64(sign.sign());
@@ -623,7 +625,7 @@ public class Client {
 	public static void main(String[] args) {
 		try {
 			String serverAddress;
-			if(args.length < 1)
+			if (args.length < 1)
 				serverAddress = "localhost"; // default
 			else
 				serverAddress = args[0]; // e.g. pom-itb-cs2.campus.pomona.edu
