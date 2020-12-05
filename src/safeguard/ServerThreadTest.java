@@ -47,6 +47,8 @@ class ServerThreadTest {
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
 		String[] entries = userFile.list();
+		
+		assertNotNull(entries);
 		for (String s : entries) {
 			File currentFile = new File(userFile.getPath(), s);
 			currentFile.delete();
@@ -55,7 +57,7 @@ class ServerThreadTest {
 	}
 
 	@Test
-	void testCreateUser() throws NoSuchAlgorithmException, IOException {
+	void testCreateUser() throws NoSuchAlgorithmException, IOException, NullPointerException {
 		// create a user successfully
 		String response = thread.createUser(username, password, email);
 		assertEquals(response, "Successfully created an account.");
@@ -67,6 +69,7 @@ class ServerThreadTest {
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
 		String[] entries = userFile.list();
+		assertNotNull(entries);
 		for (String s : entries) {
 			File currentFile = new File(userFile.getPath(), s);
 			currentFile.delete();
@@ -95,6 +98,7 @@ class ServerThreadTest {
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
 		String[] entries = userFile.list();
+		assertNotNull(entries);
 		for (String s : entries) {
 			File currentFile = new File(userFile.getPath(), s);
 			currentFile.delete();
@@ -125,6 +129,7 @@ class ServerThreadTest {
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
 		String[] entries = userFile.list();
+		assertNotNull(entries);
 		for (String s : entries) {
 			File currentFile = new File(userFile.getPath(), s);
 			currentFile.delete();
@@ -151,6 +156,7 @@ class ServerThreadTest {
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
 		String[] entries = userFile.list();
+		assertNotNull(entries);
 		for (String s : entries) {
 			File currentFile = new File(userFile.getPath(), s);
 			currentFile.delete();
@@ -177,6 +183,7 @@ class ServerThreadTest {
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
 		String[] entries = userFile.list();
+		assertNotNull(entries);
 		for (String s : entries) {
 			File currentFile = new File(userFile.getPath(), s);
 			currentFile.delete();
@@ -204,6 +211,7 @@ class ServerThreadTest {
 		// delete all testing keys made
 		File userFile = new File(workingDir, username);
 		String[] entries = userFile.list();
+		assertNotNull(entries);
 		for (String s : entries) {
 			File currentFile = new File(userFile.getPath(), s);
 			currentFile.delete();

@@ -8,7 +8,6 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -76,7 +75,6 @@ public class Client {
 			verifyCertificate();
 
 			// key transport protocol
-			Gen gen = new Gen();
 			try {
 				// generate key transfer message
 				streamOut.writeUTF(generateKeyTransferMessage(pubKeyB, privKeyA));
